@@ -22,37 +22,36 @@ function get_reasonable_unit(value, units)
     return unit, unit_name
 end
 
-"""Time unit scale factors as (scale_factor, unit_name) tuples, ordered from smallest to largest."""
-const TIME_UNITS_ORDERED = [
-    (1.0, "ns"), (1e-3, "μs"), (1e-6, "ms"), (1e-9, "s"), (1e-9 / 3600, "h")
-]
-
-"""Time unit scale factors mapping unit names to (scale_factor, unit_name)."""
-const TIME_UNITS = Dict(
-    unit_name => (scale, unit_name) for (scale, unit_name) in TIME_UNITS_ORDERED
+"""Time unit scale factors mapping unit names to (scale_factor, unit)."""
+const TIME_UNITS = (
+    ns=(1.0, "ns"),
+    μs=(1e-3, "μs"),
+    us=(1e-3, "μs"),  # alias for μs
+    ms=(1e-6, "ms"),
+    s=(1e-9, "s"),
+    h=(1e-9 / 3600, "h"),
 )
-
-# alias for μs
-TIME_UNITS["us"] = TIME_UNITS["μs"]
 
 """
     get_time_unit_scale(unit_name::String)
+    get_time_unit_scale(unit_name::Symbol)
 
 Get the time unit scale factor for a given unit name.
 Returns (scale_factor, unit_name) tuple.
 
 Valid unit names: "ns", "μs", "us", "ms", "s", "h"
 """
-function get_time_unit_scale(unit_name::String)
+function get_time_unit_scale(unit_name::Symbol)
     if !haskey(TIME_UNITS, unit_name)
-        valid_units = join(sort(collect(keys(TIME_UNITS))), ", ")
+        valid_units = join(string.(keys(TIME_UNITS)), ", ")
         error("Unknown time unit: $unit_name. Valid units are: $valid_units")
     end
     return TIME_UNITS[unit_name]
 end
+get_time_unit_scale(unit_name::String) = get_time_unit_scale(Symbol(unit_name))
 
 function get_reasonable_time_unit(quantities::AbstractArray)
-    return get_reasonable_unit(median(quantities), TIME_UNITS_ORDERED)
+    return get_reasonable_unit(median(quantities), values(TIME_UNITS))
 end
 
 function get_reasonable_memory_unit(memory)
