@@ -1,21 +1,34 @@
-name: 'Benchmark PR with AirspeedVelocity'
-description: 'Compare PR performance (time/memory) against the default branch and comment results'
-author: 'Miles Cranmer'
+name: "Benchmark PR with AirspeedVelocity"
+description: "Compare PR performance (time/memory) against the default branch and comment results"
+author: "Miles Cranmer"
 branding: { icon: activity, color: purple }
 
 inputs:
-  asv-version:   { default: '0.6',          description: 'AirspeedVelocity version' }
-  julia-version: { default: '1',            description: 'Julia version' }
-  mode:          { default: 'time,memory',  description: 'Comma-separated list of modes for benchpkgtable (e.g. time,memory)' }
-  enable-plots:  { default: 'false',        description: 'Generate & upload plots' }
-  tune:          { default: 'false',        description: 'Pass --tune to benchpkg' }
-  script:        { default: '',             description: 'Custom benchmark script path' }
-  rev:           { default: '',             description: '--rev list for benchpkg' }
-  bench-on:      { default: '',             description: '--bench-on commit to freeze script' }
-  filter:        { default: '',             description: '--filter list for benchpkg' }
-  exeflags:      { default: '',             description: '--exeflags for Julia' }
-  extra-pkgs:    { default: '',             description: '--add extra packages (comma-sep)' }
-  job-summary:   { default: 'false',        description: 'Output to job summary instead of PR comment' }
+  asv-version: { default: "0.6", description: "AirspeedVelocity version" }
+  julia-version: { default: "1", description: "Julia version" }
+  mode:
+    {
+      default: "time,memory",
+      description: "Comma-separated list of modes for benchpkgtable (e.g. time,memory)",
+    }
+  time-unit:
+    {
+      default: "",
+      description: "Fixed time unit for benchpkgtable (ns, μs, us, ms, s, h). Empty for auto-detection.",
+    }
+  enable-plots: { default: "false", description: "Generate & upload plots" }
+  tune: { default: "false", description: "Pass --tune to benchpkg" }
+  script: { default: "", description: "Custom benchmark script path" }
+  rev: { default: "", description: "--rev list for benchpkg" }
+  bench-on: { default: "", description: "--bench-on commit to freeze script" }
+  filter: { default: "", description: "--filter list for benchpkg" }
+  exeflags: { default: "", description: "--exeflags for Julia" }
+  extra-pkgs: { default: "", description: "--add extra packages (comma-sep)" }
+  job-summary:
+    {
+      default: "false",
+      description: "Output to job summary instead of PR comment",
+    }
 
 runs:
   using: composite
@@ -23,7 +36,7 @@ runs:
     - uses: actions/checkout@v5
       with:
         ref: ${{ github.event.pull_request.head.sha }}
-        persist-credentials: false  # Just for security considerations
+        persist-credentials: false # Just for security considerations
 
     - name: Setup Julia
       uses: julia-actions/setup-julia@v2
@@ -98,6 +111,9 @@ runs:
         [[ -n "${{ inputs.exeflags }}"     ]] && bench_args+=("--exeflags='${{ inputs.exeflags }}'")
         [[ -n "${{ inputs.extra-pkgs }}"   ]] && bench_args+=("--add=${{ inputs.extra-pkgs }}")
         [[ "${{ inputs.tune }}" == 'true'  ]] && bench_args+=("--tune")
+
+        # Options that apply **only** to benchpkgtable
+        [[ -n "${{ inputs.time-unit }}"    ]] && table_args+=("--time-unit=${{ inputs.time-unit }}")
 
         # Export as composite-action outputs
         echo "bench_args=${bench_args[*]}" >> "$GITHUB_OUTPUT"
@@ -181,7 +197,7 @@ runs:
       id: find
       with:
         issue-number: ${{ github.event.pull_request.number }}
-        comment-author: 'github-actions[bot]'
+        comment-author: "github-actions[bot]"
         body-includes: "Benchmark Results (Julia v${{ inputs.julia-version }})"
 
     - name: Create or update comment
