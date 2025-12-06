@@ -1,12 +1,28 @@
 module TableUtils
 
 using ..Utils:
-    get_reasonable_time_unit, get_reasonable_allocs_unit, get_reasonable_memory_unit
+    get_reasonable_time_unit,
+    get_reasonable_allocs_unit,
+    get_reasonable_memory_unit,
+    get_time_unit_scale
 using OrderedCollections: OrderedDict
 using Printf: @sprintf
 
-function format_time(val::Dict)
-    unit, unit_name = get_reasonable_time_unit([val["median"]])
+"""
+    format_time(val::Dict, row_name::String=""; time_unit=nothing)
+
+Format a time value with optional fixed unit. When `time_unit` is `nothing`,
+the unit is automatically chosen based on the magnitude.
+Valid time units: "ns", "μs", "us", "ms", "s", "h"
+"""
+function format_time(
+    val::Dict, row_name::String=""; time_unit::Union{Nothing,String}=nothing
+)
+    if time_unit === nothing
+        unit, unit_name = get_reasonable_time_unit([val["median"]])
+    else
+        unit, unit_name = get_time_unit_scale(time_unit)
+    end
     if haskey(val, "75")
         @sprintf(
             "%.3g ± %.2g %s",
@@ -18,15 +34,25 @@ function format_time(val::Dict)
         @sprintf("%.3g %s", val["median"] * unit, unit_name)
     end
 end
-function format_time(val::Number)
-    unit, unit_name = get_reasonable_memory_unit([val])
+
+function format_time(
+    val::Number, row_name::String=""; time_unit::Union{Nothing,String}=nothing
+)
+    if time_unit === nothing
+        unit, unit_name = get_reasonable_memory_unit([val])
+    else
+        unit, unit_name = get_time_unit_scale(time_unit)
+    end
     @sprintf("%.3g %s", val * unit, unit_name)
 end
-function format_time(::Missing)
+
+function format_time(
+    ::Missing, row_name::String=""; time_unit::Union{Nothing,String}=nothing
+)
     return ""
 end
 
-function format_memory(val::Dict)
+function format_memory(val::Dict, _row_name::String="")
     allocs, memory = get(val, "allocs", nothing), get(val, "memory", nothing)
     if !isnothing(allocs) && !isnothing(memory)
         allocs_unit, allocs_unit_name = get_reasonable_allocs_unit(val["allocs"])
@@ -42,11 +68,12 @@ function format_memory(val::Dict)
         ""
     end
 end
-function format_memory(::Missing)
+
+function format_memory(::Missing, _row_name::String="")
     return ""
 end
 
-function default_formatter(key)
+function default_formatter(key; time_unit::Union{Nothing,String}=nothing)
     if key ∉ ("median", "memory")
         error("Unknown ratio column: $key")
     end
@@ -54,7 +81,11 @@ function default_formatter(key)
     if key == "memory"
         return format_memory
     else # if key == "median"
-        return format_time
+        return (val, row_name) -> begin
+            # time_to_load should always use auto-detection for units
+            effective_time_unit = row_name == "time_to_load" ? nothing : time_unit
+            format_time(val; time_unit=effective_time_unit)
+        end
     end
 end
 
@@ -69,12 +100,19 @@ The `formatter` keyword argument generates the column value. It defaults to
 `TableUtils.format_time`, which prints the median time ± the interquantile range.
 `TableUtils.format_memory` is also available to print the number of allocations
 and the allocated memory.
+
+The `time_unit` keyword argument can be used to specify a fixed time unit for
+all benchmark results. Valid values are: "ns", "μs", "us", "ms", "s", "h".
+If not specified (default), the unit is automatically chosen based on the magnitude
+of the value. The `time_to_load` benchmark always uses auto-detection regardless
+of this setting.
 """
 function create_table(
     combined_results::OrderedDict;
     key="median",
     add_ratio_col=true,
-    formatter=default_formatter(key),
+    time_unit::Union{Nothing,String}=nothing,
+    formatter=default_formatter(key; time_unit=time_unit),
 )
     num_revisions = length(combined_results)
     num_cols = 1 + num_revisions
@@ -98,13 +136,11 @@ function create_table(
 
     # Cutoff headers if needed:
     cutoff = 14
-    headers = String[
-        if length(head) <= cutoff
-            head
-        else
-            first(head, cutoff) * "..."
-        end for head in headers
-    ]
+    headers = String[if length(head) <= cutoff
+        head
+    else
+        first(head, cutoff) * "..."
+    end for head in headers]
 
     data_columns = Vector{String}[]
 
@@ -112,7 +148,7 @@ function create_table(
         col = String[]
         for row in all_keys
             val = get(result, row, missing)
-            push!(col, formatter(val))
+            push!(col, formatter(val, row))
         end
         push!(data_columns, col)
     end

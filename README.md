@@ -18,7 +18,7 @@ This package allows you to:
 This package also freezes the benchmark script at a particular revision,
 so there is no worry about the old history overwriting the benchmark.
 
-https://github.com/MilesCranmer/AirspeedVelocity.jl/assets/7593028/f27b04ef-8491-4f49-a312-4df0fae00598
+<https://github.com/MilesCranmer/AirspeedVelocity.jl/assets/7593028/f27b04ef-8491-4f49-a312-4df0fae00598>
 
 - [AirspeedVelocity.jl](#airspeedvelocityjl)
   - [Installation](#installation)
@@ -142,7 +142,6 @@ Each matrix leg writes its own comment (Option 1) or section in the job summary 
 | `extra-pkgs`    | `""`             | `--add` extra packages (comma-separated)    |
 
 ## Further examples
-
 
 You can configure all options with the CLI flags. For example, to benchmark
 the registered package `Transducers.jl` at the revisions `v0.4.20`, `v0.4.70`, and `master`,
@@ -288,6 +287,7 @@ You can also just generate a table from stored JSON results:
                                  [-i --input-dir <arg>]
                                  [--ratio]
                                  [--mode <arg>]
+                                 [--time-unit <arg>]
                                  [--url <arg>]
                                  [--path <arg>]
 
@@ -306,6 +306,9 @@ Print a table of the benchmarks of a package as created with `benchpkg`.
 - `--url <arg>`: URL of the package. Only used to get the package name.
 - `--path <arg>`: Path of the package. The default is `.` if other arguments are not given.
    Only used to get the package name.
+- `--time-unit <arg>`: Fixed time unit for all benchmark results. Valid values are
+  "ns", "μs", "us", "ms", "s", "h". If not specified, units are chosen automatically.
+  Note: "time_to_load" always uses automatic unit selection.
 
 #### Flags
 

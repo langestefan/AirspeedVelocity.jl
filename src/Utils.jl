@@ -22,9 +22,37 @@ function get_reasonable_unit(value, units)
     return unit, unit_name
 end
 
+"""Time unit scale factors as (scale_factor, unit_name) tuples, ordered from smallest to largest."""
+const TIME_UNITS_ORDERED = [
+    (1.0, "ns"), (1e-3, "μs"), (1e-6, "ms"), (1e-9, "s"), (1e-9 / 3600, "h")
+]
+
+"""Time unit scale factors mapping unit names to (scale_factor, unit_name)."""
+const TIME_UNITS = Dict(
+    unit_name => (scale, unit_name) for (scale, unit_name) in TIME_UNITS_ORDERED
+)
+
+# alias for μs
+TIME_UNITS["us"] = TIME_UNITS["μs"]
+
+"""
+    get_time_unit_scale(unit_name::String)
+
+Get the time unit scale factor for a given unit name.
+Returns (scale_factor, unit_name) tuple.
+
+Valid unit names: "ns", "μs", "us", "ms", "s", "h"
+"""
+function get_time_unit_scale(unit_name::String)
+    if !haskey(TIME_UNITS, unit_name)
+        valid_units = join(sort(collect(keys(TIME_UNITS))), ", ")
+        error("Unknown time unit: $unit_name. Valid units are: $valid_units")
+    end
+    return TIME_UNITS[unit_name]
+end
+
 function get_reasonable_time_unit(quantities::AbstractArray)
-    units = [(1.0, "ns"), (1e-3, "μs"), (1e-6, "ms"), (1e-9, "s"), (1e-9 / 3600, "h")]
-    return get_reasonable_unit(median(quantities), units)
+    return get_reasonable_unit(median(quantities), TIME_UNITS_ORDERED)
 end
 
 function get_reasonable_memory_unit(memory)
@@ -53,7 +81,9 @@ function _get_script(;
         ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
         using Pkg
         Pkg.add(
-            PackageSpec(; name=$package_name, rev=$benchmark_on, url=$url, path=$path);
+            PackageSpec(;
+                name=($package_name), rev=($benchmark_on), url=($url), path=($path)
+            );
             io=devnull,
         )
         using $(Symbol(package_name)): $(Symbol(package_name))
