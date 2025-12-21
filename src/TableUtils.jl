@@ -33,15 +33,6 @@ function format_time(val::Dict; time_unit::Union{Nothing,Symbol}=nothing)
     end
 end
 
-function format_time(val::Number; time_unit::Union{Nothing,Symbol}=nothing)
-    if time_unit === nothing
-        unit, unit_name = get_reasonable_time_unit([val])
-    else
-        unit, unit_name = get_time_unit_scale(time_unit)
-    end
-    @sprintf("%.3g %s", val * unit, unit_name)
-end
-
 function format_time(::Missing; time_unit::Union{Nothing,Symbol}=nothing)
     return ""
 end
