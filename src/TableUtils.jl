@@ -46,7 +46,7 @@ function format_time(::Missing; time_unit::Union{Nothing,Symbol}=nothing)
     return ""
 end
 
-function format_memory(val::Dict, _row_name::String="")
+function format_memory(val::Dict)
     allocs, memory = get(val, "allocs", nothing), get(val, "memory", nothing)
     if !isnothing(allocs) && !isnothing(memory)
         allocs_unit, allocs_unit_name = get_reasonable_allocs_unit(val["allocs"])
@@ -63,7 +63,7 @@ function format_memory(val::Dict, _row_name::String="")
     end
 end
 
-function format_memory(::Missing, _row_name::String="")
+function format_memory(::Missing)
     return ""
 end
 
@@ -71,7 +71,7 @@ function format_cell(
     val, row_name::String; key::AbstractString, time_unit::Union{Nothing,Symbol}
 )
     if key == "memory"
-        return format_memory(val, row_name)
+        return format_memory(val)
     elseif key == "median"
         effective_time_unit = row_name == "time_to_load" ? nothing : time_unit
         return format_time(val; time_unit=effective_time_unit)
