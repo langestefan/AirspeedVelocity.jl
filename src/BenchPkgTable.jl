@@ -67,8 +67,11 @@ Comonicon.@main function benchpkgtable(
     combined_results = load_results(package_name, revs; input_dir=input_dir)
 
     # Convert empty string to nothing, otherwise normalize to a Symbol
-    effective_time_unit =
-        isempty(force_time_unit) ? nothing : normalize_time_unit(force_time_unit)
+    effective_time_unit = if isempty(force_time_unit)
+        nothing
+    else
+        Symbol(normalize_time_unit(force_time_unit))
+    end
 
     modes = split(mode, ",")
     for m in modes
