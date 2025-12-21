@@ -58,35 +58,6 @@ function format_memory(::Missing)
     return ""
 end
 
-function format_cell(
-    val, row_name::String; key::AbstractString, time_unit::Union{Nothing,Symbol}
-)
-    if key == "memory"
-        return format_memory(val)
-    elseif key == "median"
-        effective_time_unit = row_name == "time_to_load" ? nothing : time_unit
-        return format_time(val; time_unit=effective_time_unit)
-    else
-        error("Unknown ratio column: $key")
-    end
-end
-
-struct DefaultFormatter
-    key::String
-    time_unit::Union{Nothing,Symbol}
-end
-
-function (f::DefaultFormatter)(val, row_name::String="")
-    return format_cell(val, row_name; key=f.key, time_unit=f.time_unit)
-end
-
-function default_formatter(key; time_unit::Union{Nothing,Symbol}=nothing)
-    if key ∉ ("median", "memory")
-        error("Unknown ratio column: $key")
-    end
-    return DefaultFormatter(string(key), time_unit)
-end
-
 """
     create_table(combined_results::OrderedDict; kws...)
 
@@ -96,8 +67,7 @@ for the comparison, assuming the first revision is one to compare against.
 
 The `formatter` keyword argument generates the column value. By default, the table
 formats time as the median ± the interquantile range, and formats memory as the number
-of allocations and allocated memory. If provided, `formatter` may accept either
-`formatter(val)` or `formatter(val, row_name)`.
+of allocations and allocated memory.
 
 The `time_unit` keyword argument can be used to specify a fixed time unit for
 all benchmark results. Valid values are: `:ns`, `Symbol("μs")`, `:ms`, `:s`, `:h` (and `:us` is accepted as an alias for `Symbol("μs")`).
@@ -110,7 +80,7 @@ function create_table(
     key="median",
     add_ratio_col=true,
     time_unit::Union{Nothing,Symbol}=nothing,
-    formatter=default_formatter(key; time_unit=time_unit),
+    formatter=nothing,
 )
     num_revisions = length(combined_results)
     num_cols = 1 + num_revisions
@@ -148,10 +118,17 @@ function create_table(
         col = String[]
         for row in all_keys
             val = get(result, row, missing)
-            if applicable(formatter, val, row)
-                push!(col, formatter(val, row))
-            else
+            if formatter !== nothing
                 push!(col, formatter(val))
+            else
+                if key == "memory"
+                    push!(col, format_memory(val))
+                elseif key == "median"
+                    effective_time_unit = row == "time_to_load" ? nothing : time_unit
+                    push!(col, format_time(val; time_unit=effective_time_unit))
+                else
+                    error("Unknown ratio column: $key")
+                end
             end
         end
         push!(data_columns, col)
