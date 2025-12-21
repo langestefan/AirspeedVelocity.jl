@@ -185,7 +185,8 @@ end
                 "25" => 0.1e6,
                 "memory" => 1024 / 10,
                 "allocs" => 1e6,
-            ),#= We leave out bench3 as a test =#
+            ),
+            #= We leave out bench3 as a test =#
         ),
         "v2" => OrderedDict(
             "bench1" => Dict(
@@ -300,19 +301,16 @@ end
 
     # (time_unit, expected_fast, expected_medium, expected_slow)
     test_cases = [
-        ("ms", "0.0001 ± 4e-05 ms", "1.5 ± 0.2 ms", "2e+03 ± 4e+02 ms"),
-        ("us", "0.1 ± 0.04 μs", "1.5e+03 ± 2e+02 μs", "2e+06 ± 4e+05 μs"),
-        ("ns", "100 ± 40 ns", "1.5e+06 ± 2e+05 ns", "2e+09 ± 4e+08 ns"),
-        ("s", "1e-07 ± 4e-08 s", "0.0015 ± 0.0002 s", "2 ± 0.4 s"),
+        (:ms, "0.0001 ± 4e-05 ms", "1.5 ± 0.2 ms", "2e+03 ± 4e+02 ms"),
+        (:us, "0.1 ± 0.04 μs", "1.5e+03 ± 2e+02 μs", "2e+06 ± 4e+05 μs"),
+        (:ns, "100 ± 40 ns", "1.5e+06 ± 2e+05 ns", "2e+09 ± 4e+08 ns"),
+        (:s, "1e-07 ± 4e-08 s", "0.0015 ± 0.0002 s", "2 ± 0.4 s"),
     ]
 
-    @testset "time_unit=$t_unit" for (
+    @testset "time_unit=$(t_unit)" for (
         t_unit, expected_fast, expected_medium, expected_slow
     ) in test_cases
-
         table = create_table(combined_results; add_ratio_col=false, time_unit=t_unit)
-        println("Testing time_unit=$t_unit")
-        println(table)
         @test occursin(expected_fast, table)    # fast_bench
         @test occursin(expected_medium, table)  # medium_bench
         @test occursin(expected_slow, table)    # slow_bench
@@ -322,6 +320,8 @@ end
 
     # test that invalid time unit throws an error
     @test_throws ErrorException AirspeedVelocity.Utils.get_time_unit_scale("invalid_unit")
+    @test AirspeedVelocity.Utils.get_time_unit_scale("μs") ==
+        AirspeedVelocity.Utils.get_time_unit_scale("us")
 end
 
 @testitem "Dirty repo with filter" begin

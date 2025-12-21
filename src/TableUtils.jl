@@ -9,15 +9,13 @@ using OrderedCollections: OrderedDict
 using Printf: @sprintf
 
 """
-    format_time(val::Dict, row_name::String=""; time_unit=nothing)
+    format_time(val::Dict; time_unit=nothing)
 
 Format a time value with optional fixed unit. When `time_unit` is `nothing`,
 the unit is automatically chosen based on the magnitude.
-Valid time units: "ns", "μs", "us", "ms", "s", "h"
+Valid time units: "ns", "μs", "ms", "s", "h" (and `:us` is accepted as an alias for `"μs"`).
 """
-function format_time(
-    val::Dict, row_name::String=""; time_unit::Union{Nothing,String}=nothing
-)
+function format_time(val::Dict; time_unit::Union{Nothing,Symbol}=nothing)
     if time_unit === nothing
         unit, unit_name = get_reasonable_time_unit([val["median"]])
     else
@@ -35,20 +33,16 @@ function format_time(
     end
 end
 
-function format_time(
-    val::Number, row_name::String=""; time_unit::Union{Nothing,String}=nothing
-)
+function format_time(val::Number; time_unit::Union{Nothing,Symbol}=nothing)
     if time_unit === nothing
-        unit, unit_name = get_reasonable_memory_unit([val])
+        unit, unit_name = get_reasonable_time_unit([val])
     else
         unit, unit_name = get_time_unit_scale(time_unit)
     end
     @sprintf("%.3g %s", val * unit, unit_name)
 end
 
-function format_time(
-    ::Missing, row_name::String=""; time_unit::Union{Nothing,String}=nothing
-)
+function format_time(::Missing; time_unit::Union{Nothing,Symbol}=nothing)
     return ""
 end
 
@@ -73,20 +67,33 @@ function format_memory(::Missing, _row_name::String="")
     return ""
 end
 
-function default_formatter(key; time_unit::Union{Nothing,String}=nothing)
+function format_cell(
+    val, row_name::String; key::AbstractString, time_unit::Union{Nothing,Symbol}
+)
+    if key == "memory"
+        return format_memory(val, row_name)
+    elseif key == "median"
+        effective_time_unit = row_name == "time_to_load" ? nothing : time_unit
+        return format_time(val; time_unit=effective_time_unit)
+    else
+        error("Unknown ratio column: $key")
+    end
+end
+
+struct DefaultFormatter
+    key::String
+    time_unit::Union{Nothing,Symbol}
+end
+
+function (f::DefaultFormatter)(val, row_name::String="")
+    return format_cell(val, row_name; key=f.key, time_unit=f.time_unit)
+end
+
+function default_formatter(key; time_unit::Union{Nothing,Symbol}=nothing)
     if key ∉ ("median", "memory")
         error("Unknown ratio column: $key")
     end
-
-    if key == "memory"
-        return format_memory
-    else # if key == "median"
-        return (val, row_name) -> begin
-            # time_to_load should always use auto-detection for units
-            effective_time_unit = row_name == "time_to_load" ? nothing : time_unit
-            format_time(val; time_unit=effective_time_unit)
-        end
-    end
+    return DefaultFormatter(string(key), time_unit)
 end
 
 """
@@ -96,13 +103,13 @@ Create a markdown table of the results loaded from the `load_results` function.
 If there are two results for a given benchmark, will have an additional column
 for the comparison, assuming the first revision is one to compare against.
 
-The `formatter` keyword argument generates the column value. It defaults to
-`TableUtils.format_time`, which prints the median time ± the interquantile range.
-`TableUtils.format_memory` is also available to print the number of allocations
-and the allocated memory.
+The `formatter` keyword argument generates the column value. By default, the table
+formats time as the median ± the interquantile range, and formats memory as the number
+of allocations and allocated memory. If provided, `formatter` may accept either
+`formatter(val)` or `formatter(val, row_name)`.
 
 The `time_unit` keyword argument can be used to specify a fixed time unit for
-all benchmark results. Valid values are: "ns", "μs", "us", "ms", "s", "h".
+all benchmark results. Valid values are: `:ns`, `Symbol("μs")`, `:ms`, `:s`, `:h` (and `:us` is accepted as an alias for `Symbol("μs")`).
 If not specified (default), the unit is automatically chosen based on the magnitude
 of the value. The `time_to_load` benchmark always uses auto-detection regardless
 of this setting.
@@ -111,7 +118,7 @@ function create_table(
     combined_results::OrderedDict;
     key="median",
     add_ratio_col=true,
-    time_unit::Union{Nothing,String}=nothing,
+    time_unit::Union{Nothing,Symbol}=nothing,
     formatter=default_formatter(key; time_unit=time_unit),
 )
     num_revisions = length(combined_results)
@@ -136,11 +143,13 @@ function create_table(
 
     # Cutoff headers if needed:
     cutoff = 14
-    headers = String[if length(head) <= cutoff
-        head
-    else
-        first(head, cutoff) * "..."
-    end for head in headers]
+    headers = String[
+        if length(head) <= cutoff
+            head
+        else
+            first(head, cutoff) * "..."
+        end for head in headers
+    ]
 
     data_columns = Vector{String}[]
 
@@ -148,7 +157,11 @@ function create_table(
         col = String[]
         for row in all_keys
             val = get(result, row, missing)
-            push!(col, formatter(val, row))
+            if applicable(formatter, val, row)
+                push!(col, formatter(val, row))
+            else
+                push!(col, formatter(val))
+            end
         end
         push!(data_columns, col)
     end

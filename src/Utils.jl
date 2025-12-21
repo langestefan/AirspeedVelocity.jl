@@ -24,13 +24,13 @@ end
 
 """Time unit scale factors mapping unit names to (scale_factor, unit)."""
 const TIME_UNITS = (
-    ns=(1.0, "ns"),
-    μs=(1e-3, "μs"),
-    us=(1e-3, "μs"),  # alias for μs
-    ms=(1e-6, "ms"),
-    s=(1e-9, "s"),
-    h=(1e-9 / 3600, "h"),
+    ns=1.0, μs=1e-3, ms=1e-6, s=1e-9, h=1e-9 / 3600
 )
+
+function normalize_time_unit(unit_name::AbstractString)
+    u = Symbol(lowercase(unit_name))
+    return u == :us ? :μs : u
+end
 
 """
     get_time_unit_scale(unit_name::String)
@@ -42,17 +42,21 @@ Returns (scale_factor, unit_name) tuple.
 Valid unit names: "ns", "μs", "us", "ms", "s", "h"
 """
 function get_time_unit_scale(unit_name::Symbol)
+    unit_name = normalize_time_unit(string(unit_name))
     if !haskey(TIME_UNITS, unit_name)
         valid_units = join(string.(keys(TIME_UNITS)), ", ")
         error("Unknown time unit: $unit_name. Valid units are: $valid_units")
     end
-    return TIME_UNITS[unit_name]
+    return TIME_UNITS[unit_name], unit_name
 end
-get_time_unit_scale(unit_name::String) = get_time_unit_scale(Symbol(unit_name))
+function get_time_unit_scale(unit_name::AbstractString)
+    return get_time_unit_scale(normalize_time_unit(unit_name))
+end
 
-function get_reasonable_time_unit(quantities::AbstractArray)
+function pick_time_unit(quantities::AbstractArray)
     return get_reasonable_unit(median(quantities), values(TIME_UNITS))
 end
+get_reasonable_time_unit(quantities::AbstractArray) = pick_time_unit(quantities)
 
 function get_reasonable_memory_unit(memory)
     units = [(1.0, "B"), (1 / 1024, "kB"), (1 / 1024^2, "MB"), (1 / 1024^3, "GB")]
@@ -80,9 +84,7 @@ function _get_script(;
         ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
         using Pkg
         Pkg.add(
-            PackageSpec(;
-                name=($package_name), rev=($benchmark_on), url=($url), path=($path)
-            );
+            PackageSpec(; name=$package_name, rev=$benchmark_on, url=$url, path=$path);
             io=devnull,
         )
         using $(Symbol(package_name)): $(Symbol(package_name))

@@ -1,7 +1,7 @@
 module BenchPkgTable
 
 using ..TableUtils: create_table, format_memory
-using ..Utils: get_package_name_defaults, parse_rev, load_results
+using ..Utils: get_package_name_defaults, parse_rev, load_results, normalize_time_unit
 using Comonicon
 
 """
@@ -67,8 +67,8 @@ Comonicon.@main function benchpkgtable(
 
     combined_results = load_results(package_name, revs; input_dir=input_dir)
 
-    # Convert empty string to nothing for time_unit
-    effective_time_unit = isempty(time_unit) ? nothing : time_unit
+    # Convert empty string to nothing, otherwise normalize to a Symbol
+    effective_time_unit = isempty(time_unit) ? nothing : normalize_time_unit(time_unit)
 
     modes = split(mode, ",")
     for m in modes

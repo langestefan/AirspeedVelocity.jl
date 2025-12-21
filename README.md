@@ -18,7 +18,7 @@ This package allows you to:
 This package also freezes the benchmark script at a particular revision,
 so there is no worry about the old history overwriting the benchmark.
 
-<https://github.com/MilesCranmer/AirspeedVelocity.jl/assets/7593028/f27b04ef-8491-4f49-a312-4df0fae00598>
+https://github.com/MilesCranmer/AirspeedVelocity.jl/assets/7593028/f27b04ef-8491-4f49-a312-4df0fae00598
 
 - [AirspeedVelocity.jl](#airspeedvelocityjl)
   - [Installation](#installation)
@@ -142,6 +142,7 @@ Each matrix leg writes its own comment (Option 1) or section in the job summary 
 | `extra-pkgs`    | `""`             | `--add` extra packages (comma-separated)    |
 
 ## Further examples
+
 
 You can configure all options with the CLI flags. For example, to benchmark
 the registered package `Transducers.jl` at the revisions `v0.4.20`, `v0.4.70`, and `master`,
