@@ -7,6 +7,7 @@ inputs:
   asv-version:   { default: '0.6',          description: 'AirspeedVelocity version' }
   julia-version: { default: '1',            description: 'Julia version' }
   mode:          { default: 'time,memory',  description: 'Comma-separated list of modes for benchpkgtable (e.g. time,memory)' }
+  force-time-unit: { default: '',           description: 'Force a time unit for all benchmark results (excluding load time). Valid values: ns, μs, us, ms, s, h. Empty for auto-detection.' }
   enable-plots:  { default: 'false',        description: 'Generate & upload plots' }
   tune:          { default: 'false',        description: 'Pass --tune to benchpkg' }
   script:        { default: '',             description: 'Custom benchmark script path' }
@@ -98,6 +99,9 @@ runs:
         [[ -n "${{ inputs.exeflags }}"     ]] && bench_args+=("--exeflags='${{ inputs.exeflags }}'")
         [[ -n "${{ inputs.extra-pkgs }}"   ]] && bench_args+=("--add=${{ inputs.extra-pkgs }}")
         [[ "${{ inputs.tune }}" == 'true'  ]] && bench_args+=("--tune")
+
+        # Options that apply **only** to benchpkgtable
+        [[ -n "${{ inputs.force-time-unit }}" ]] && table_args+=("--force-time-unit=${{ inputs.force-time-unit }}")
 
         # Export as composite-action outputs
         echo "bench_args=${bench_args[*]}" >> "$GITHUB_OUTPUT"
