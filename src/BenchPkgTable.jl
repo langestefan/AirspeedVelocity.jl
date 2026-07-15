@@ -14,6 +14,7 @@ using Comonicon
                                  [--path <arg>]
                                  [--threshold <arg>]
                                  [--plain]
+                                 [--collapse]
 
 Print a table of the benchmarks of a package as created with `benchpkg`.
 
@@ -45,6 +46,9 @@ legacy per-revision table with a ratio column.
 
 - `--plain`: Emit the legacy per-revision table with a ratio column instead of the
     rich comparison output (default: false).
+- `--collapse`: Place every table inside one collapsible block per mode, leaving only
+    the section header and one-line summary visible (keeps comment size constant).
+    Rich output only (default: false).
 - `--ratio`: Whether to include the ratio (default: false). Only applies when
     comparing two revisions.
 - `--mode`: Table mode(s). Valid values are "time" (default), to print the
@@ -62,6 +66,7 @@ Comonicon.@main function benchpkgtable(
     path::String="",
     plain::Bool=false,
     threshold::Float64=0.1,
+    collapse::Bool=false,
 )
     revs = convert(Vector{String}, split(rev, ","))
     Base.filter!(!isempty, revs)
@@ -88,18 +93,19 @@ Comonicon.@main function benchpkgtable(
     end
 
     modes = split(mode, ",")
-    for m in modes
-        println(
-            create_table(
-                combined_results;
-                add_ratio_col=ratio,
-                key=translate_mode(m),
-                time_unit=effective_time_unit,
-                plain=plain,
-                significance_threshold=threshold,
-            ),
+    tables = map(modes) do m
+        create_table(
+            combined_results;
+            add_ratio_col=ratio,
+            key=translate_mode(m),
+            time_unit=effective_time_unit,
+            plain=plain,
+            significance_threshold=threshold,
+            collapse=collapse,
         )
     end
+    # Separate multiple mode sections with a horizontal rule.
+    println(join(tables, "\n---\n\n"))
 
     return nothing
 end

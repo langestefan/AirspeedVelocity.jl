@@ -19,6 +19,7 @@ using Comonicon
                             [--tune]
                             [--dont-print]
                             [--plain]
+                            [--collapse]
 
 Benchmark a package over a set of revisions.
 
@@ -52,6 +53,8 @@ Benchmark a package over a set of revisions.
 # Flags
 
 - `--plain`: Emit the legacy table instead of the rich comparison output (default: false).
+- `--collapse`: Place every table inside one collapsible block per mode, leaving only the
+    section header and one-line summary visible (keeps comment size constant). Default: false.
 - `--tune`: Whether to run benchmarks with tuning (default: false).
 
 """
@@ -71,6 +74,7 @@ Comonicon.@main function benchpkg(
     dont_print::Bool=false,
     plain::Bool=false,
     threshold::Float64=0.1,
+    collapse::Bool=false,
 )
     revs = convert(Vector{String}, split(rev, ","))
     Base.filter!(!isempty, revs)
@@ -122,6 +126,7 @@ Comonicon.@main function benchpkg(
                 key="median",
                 plain=plain,
                 significance_threshold=threshold,
+                collapse=collapse,
             ),
         )
     end

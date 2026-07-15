@@ -17,6 +17,7 @@ inputs:
   exeflags:      { default: '',             description: '--exeflags for Julia' }
   extra-pkgs:    { default: '',             description: '--add extra packages (comma-sep)' }
   job-summary:   { default: 'false',        description: 'Output to job summary instead of PR comment' }
+  collapse:      { default: 'false',        description: 'Collapse all tables into one <details> per mode, keeping only the summary visible (constant comment size)' }
 
 runs:
   using: composite
@@ -149,19 +150,18 @@ runs:
         echo "## Benchmark Results (Julia v${{ inputs.julia-version }})" > body.md
         echo "" >> body.md
 
-        # One section per requested mode; benchpkgtable emits the verdict headline
-        # and its own collapsible section for unchanged benchmarks.
-        IFS=',' read -ra MODES <<< "${{ inputs.mode }}"
-        for m in "${MODES[@]}"; do
-          {
-            benchpkgtable "${{ steps.pkg.outputs.package_name }}" \
-              --input-dir=results/ \
-              --mode=$m \
-              --ratio \
-              ${{ steps.flags.outputs.table_args }}
-            echo ""
-          } >> body.md
-        done
+        # benchpkgtable emits one "### <mode>" section per requested mode (verdict
+        # summary, split Slower/Faster tables, and a collapsible Unchanged section),
+        # separating multiple modes with a horizontal rule.
+        collapse_flag=""
+        [[ "${{ inputs.collapse }}" == 'true' ]] && collapse_flag="--collapse"
+        benchpkgtable "${{ steps.pkg.outputs.package_name }}" \
+          --input-dir=results/ \
+          --mode="${{ inputs.mode }}" \
+          --ratio \
+          $collapse_flag \
+          ${{ steps.flags.outputs.table_args }} >> body.md
+        echo "" >> body.md
 
         if [[ "${{ inputs.enable-plots }}" == 'true' ]]; then
           {

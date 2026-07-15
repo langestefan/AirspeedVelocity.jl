@@ -415,22 +415,20 @@ end
     @test TU.format_change(zero; bold=false) == "0%"
     @test TU.format_change(na; bold=false) == "—"
 
-    @test TU._mark(:regression, true) == "🔴"
-    @test TU._mark(:improvement, true) == "🟢"
-    @test TU._mark(:none, true) == "➖"
+    @test TU._dot(:worse, true) == "🔴"
+    @test TU._dot(:better, true) == "🟢"
+    @test TU._dot(:equal, true) == "⚪"
+    @test TU._arrow(:worse, true) == "⬆️"
+    @test TU._arrow(:better, true) == "⬇️"
 
-    v = TU.verdict_line(1, 1, 1; key="median", threshold=0.1, emoji=true)
-    @test occursin("**Time**", v)
-    @test occursin("🔴 1 regression", v)
-    @test occursin("🟢 1 faster", v)
-    @test occursin("➖ 1 unchanged", v)
+    @test TU._mode_label("median", true) == "⏱️ Time"
+    @test TU._mode_label("memory", true) == "💾 Memory"
+    @test TU._mode_label("median", false) == "Time"
 
-    v2 = TU.verdict_line(0, 0, 2; key="median", threshold=0.1, emoji=true)
-    @test occursin("➖ 2 benchmarks, none beyond ±10%", v2)
-
-    vm = TU.verdict_line(2, 0, 0; key="memory", threshold=0.1, emoji=true)
-    @test occursin("**Memory**", vm)
-    @test occursin("🔴 2 regressions", vm)
+    @test TU._category("sort/n=1000") == "sort"
+    @test TU._leaf("sort/n=1000") == "n=1000"
+    @test TU._category("time_to_load") == "·"   # no "/" -> no category
+    @test TU._leaf("time_to_load") == "time_to_load"
 
     @test TU.format_time_median(Dict("median" => 1.2e9)) == "1.2 s"
     @test TU.format_time_median(missing) == ""
@@ -457,18 +455,30 @@ end
     )
 
     t = create_table(combined_results)  # rich is now the default for 2 revisions
-    @test occursin("**Time** — 🔴 1 regression · 🟢 1 faster · ➖ 1 unchanged", t)
-    @test occursin("🔴 bench1", t)
-    @test occursin("**+900%**", t)
-    @test occursin("🟢 bench2", t)
-    @test occursin("**-90%**", t)
-    @test occursin("<details><summary>➖ 1 unchanged benchmark</summary>", t)
+    @test occursin("### ⏱️ Time", t)
+    @test occursin("🔴 **1 slower** · 🟢 **1 faster** · ⚪ **1 unchanged**", t)
+    @test occursin("#### 🔴 Slower", t)
+    @test occursin("#### 🟢 Faster", t)
+    @test occursin("⬆️ **+900%**", t)   # bench1 regression: value up = slower
+    @test occursin("⬇️ **-90%**", t)    # bench2 improvement: value down = faster
+    @test occursin("| Group | Benchmark |", t)   # grouped columns
+    @test occursin("<details><summary>⚪ 1 unchanged</summary>", t)
     @test occursin("bench3", t)
     @test occursin("</details>", t)
-    # significant rows are above the collapsed section
-    @test findfirst("🔴 bench1", t)[1] < findfirst("<details>", t)[1]
+    # the Slower table appears above the collapsed unchanged section
+    @test findfirst("#### 🔴 Slower", t)[1] < findfirst("<details>", t)[1]
 
-    # All-quiet case collapses everything into one <details>
+    # collapse=true: only the header + one-line summary stay visible; every table
+    # (including Slower) lives inside a single <details> block.
+    tc = create_table(combined_results; collapse=true)
+    @test occursin("🔴 **1 slower** · 🟢 **1 faster** · ⚪ **1 unchanged**", tc)
+    @test occursin("<details><summary>Details</summary>", tc)
+    @test occursin("#### ⚪ Unchanged", tc)   # unchanged shown as a bucket, not nested summary
+    @test findfirst("<details>", tc)[1] < findfirst("#### 🔴 Slower", tc)[1]
+    # summary precedes the collapsible block
+    @test findfirst("🔴 **1 slower**", tc)[1] < findfirst("<details>", tc)[1]
+
+    # All-quiet case: no Slower/Faster tables, everything collapsed
     quiet = OrderedDict(
         "v1" => OrderedDict(
             "a" => Dict("median" => 100.0, "75" => 110.0, "25" => 90.0),
@@ -480,17 +490,19 @@ end
         ),
     )
     q = create_table(quiet)
-    @test occursin("➖ 2 benchmarks, none beyond ±10%", q)
+    @test occursin("🔴 **0 slower** · 🟢 **0 faster** · ⚪ **2 unchanged**", q)
+    @test !occursin("#### 🔴 Slower", q)
     @test occursin("<details>", q)
 
-    # >2 revisions falls back to plain (no verdict)
+    # >2 revisions falls back to plain (no section header)
     three = OrderedDict(
         "v1" => OrderedDict("a" => Dict("median" => 100.0)),
         "v2" => OrderedDict("a" => Dict("median" => 100.0)),
         "v3" => OrderedDict("a" => Dict("median" => 100.0)),
     )
     f = create_table(three)
-    @test !occursin("**Time**", f)
+    @test !occursin("###", f)
+    @test !occursin("Slower", f)
 end
 
 @testitem "benchpkgtable plain vs rich flag" begin
@@ -518,13 +530,13 @@ end
     end
 
     rich = grab(() -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir))
-    @test occursin("**Time**", rich)          # verdict headline present
-    @test occursin("🔴", rich)                 # v1->v2 is a 2x slowdown
+    @test occursin("### ⏱️ Time", rich)       # rich section header present
+    @test occursin("🔴 **1 slower**", rich)    # v1->v2 is a 2x slowdown
 
     plain = grab(
         () -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir, plain=true)
     )
-    @test !occursin("**Time**", plain)        # legacy table, no verdict
+    @test !occursin("###", plain)             # legacy table, no section header
     @test occursin("v1 ", plain)
 end
 

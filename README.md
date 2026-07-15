@@ -107,7 +107,7 @@ jobs:
           job-summary: 'true'
 ```
 
-Both workflows run AirspeedVelocity and display results with a verdict headline per mode (time/memory): significant regressions and improvements are shown up front with 🔴/🟢 markers, while unchanged benchmarks are tucked into a collapsible section.
+Both workflows run AirspeedVelocity and display results with a one-line summary per mode (time/memory) followed by separate **Slower** and **Faster** tables (benchmarks grouped by category, direction shown with ⬆️/⬇️), while unchanged benchmarks are tucked into a collapsible section. Set `collapse: 'true'` to hide every table behind a single toggle per mode, keeping the comment a constant size.
 
 ### Multiple Julia versions
 
@@ -131,6 +131,7 @@ Each matrix leg writes its own comment (Option 1) or section in the job summary 
 | `asv-version`     | `"0.6"`          | AirspeedVelocity version to install         |
 | `julia-version`   | `"1"`            | Julia version to install                    |
 | `job-summary`     | `"false"`        | Output to job summary instead of PR comment |
+| `collapse`        | `"false"`        | Hide all tables behind one toggle per mode  |
 | `tune`            | `"false"`        | `--tune` to tune benchmarks first           |
 | `mode`            | `"time,memory"`  | Which tables to generate (`time`, `memory`) |
 | `enable-plots`    | `"false"`        | Upload PNG plots as artifact                |
@@ -250,6 +251,7 @@ built into the `~/.julia/bin` folder:
                             [--tune]
                             [--dont-print]
                             [--plain]
+                            [--collapse]
 
 Benchmark a package over a set of revisions.
 
@@ -283,6 +285,8 @@ Benchmark a package over a set of revisions.
 #### Flags
 
 - `--plain`: Emit the legacy table instead of the rich comparison output (default: false).
+- `--collapse`: Place every table inside one collapsible block per mode, leaving only the
+    section header and one-line summary visible (keeps comment size constant). Default: false.
 - `--tune`: Whether to run benchmarks with tuning (default: false).
 ```
 
@@ -300,6 +304,7 @@ You can also just generate a table from stored JSON results:
                                  [--path <arg>]
                                  [--threshold <arg>]
                                  [--plain]
+                                 [--collapse]
 
 Print a table of the benchmarks of a package as created with `benchpkg`.
 
@@ -331,6 +336,9 @@ per-revision table with a ratio column.
 
 - `--plain`: Emit the legacy per-revision table with a ratio column instead of the
     rich comparison output (default: false).
+- `--collapse`: Place every table inside one collapsible block per mode, leaving only
+    the section header and one-line summary visible (keeps comment size constant).
+    Rich output only (default: false).
 - `--ratio`: Whether to include the ratio (default: false). Only applies when
     comparing two revisions.
 - `--mode`: Table mode(s). Valid values are "time" (default), to print the

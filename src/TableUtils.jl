@@ -101,12 +101,42 @@ function compute_change(
     return BenchChange(change, dir, significant)
 end
 
-function _mark(dir::Symbol, emoji::Bool)
+# Colored status dots (section headers + summary line).
+function _dot(kind::Symbol, emoji::Bool)
     if emoji
-        return dir === :regression ? "🔴" : dir === :improvement ? "🟢" : "➖"
+        return kind === :worse ? "🔴" : kind === :better ? "🟢" : "⚪"
     else
-        return dir === :regression ? "^" : dir === :improvement ? "v" : "-"
+        return kind === :worse ? "!" : kind === :better ? "+" : "="
     end
+end
+
+# Per-row direction arrows tracking the metric: up = value increased (slower /
+# more memory), down = value decreased (faster / less memory).
+function _arrow(kind::Symbol, emoji::Bool)
+    if emoji
+        return kind === :worse ? "⬆️" : "⬇️"
+    else
+        return kind === :worse ? "^" : "v"
+    end
+end
+
+# Section heading label per mode.
+function _mode_label(key::String, emoji::Bool)
+    if key == "memory"
+        return emoji ? "💾 Memory" : "Memory"
+    else
+        return emoji ? "⏱️ Time" : "Time"
+    end
+end
+
+# Split a benchmark name into (category, leaf) on the first "/".
+function _category(name::String)::String
+    i = findfirst('/', name)
+    return i === nothing ? "·" : name[1:prevind(name, i)]
+end
+function _leaf(name::String)::String
+    i = findfirst('/', name)
+    return i === nothing ? name : name[nextind(name, i):end]
 end
 
 function format_change(bc::BenchChange; bold::Bool)
@@ -117,24 +147,6 @@ function format_change(bc::BenchChange; bold::Bool)
         s = "0%"
     end
     return bold ? "**" * s * "**" : s
-end
-
-function verdict_line(
-    n_reg::Int, n_faster::Int, n_unchanged::Int; key::String, threshold::Float64, emoji::Bool
-)
-    label = key == "memory" ? "Memory" : "Time"
-    non_m = _mark(:none, emoji)
-    if n_reg == 0 && n_faster == 0
-        pct = round(Int, threshold * 100)
-        noun = n_unchanged == 1 ? "benchmark" : "benchmarks"
-        return "**$label** — $non_m $n_unchanged $noun, none beyond ±$pct%"
-    end
-    reg_m = _mark(:regression, emoji)
-    imp_m = _mark(:improvement, emoji)
-    reg = "$reg_m $n_reg regression" * (n_reg == 1 ? "" : "s")
-    fast = "$imp_m $n_faster faster"
-    unch = "$non_m $n_unchanged unchanged"
-    return "**$label** — $reg · $fast · $unch"
 end
 
 function format_time_median(val::Dict; time_unit::Union{Nothing,Symbol}=nothing)
@@ -169,7 +181,9 @@ two, always falls back to the legacy table.
 
 Keyword arguments: `key` ("median" or "memory"), `add_ratio_col`, `time_unit`,
 `formatter` (legacy path only); `plain`, `significance_threshold` (default 0.10),
-`emoji` (rich path only).
+`emoji`, `collapse` (rich path only). When `collapse=true`, every table is placed
+inside one collapsible block so only the section header and one-line summary stay
+visible (keeping comment size constant).
 """
 function create_table(
     combined_results::OrderedDict;
@@ -180,6 +194,7 @@ function create_table(
     plain::Bool=false,
     significance_threshold::Float64=0.10,
     emoji::Bool=true,
+    collapse::Bool=false,
 )
     if plain || length(combined_results) != 2
         return _plain_table(
@@ -196,6 +211,7 @@ function create_table(
         time_unit=time_unit,
         threshold=significance_threshold,
         emoji=emoji,
+        collapse=collapse,
     )
 end
 
@@ -221,67 +237,122 @@ function _cell(val, key::String, time_unit::Union{Nothing,Symbol}, rowname::Stri
     end
 end
 
+# Render one status bucket as a markdown table with benchmarks grouped by
+# category. The category cell is blanked on repeats so each category reads as a
+# visual block.
+function _grouped_table(rows::Vector{NTuple{4,String}}, rev1::String, rev2::String)::String
+    isempty(rows) && return ""
+    header = String["Group", "Benchmark", rev1, rev2, "Change"]
+    data = Matrix{String}(undef, length(rows), 5)
+    prev = ""
+    for (i, row) in enumerate(rows)
+        name, c1, c2, chg = row
+        cat = _category(name)
+        data[i, 1] = cat == prev ? "" : cat
+        data[i, 2] = _leaf(name)
+        data[i, 3] = c1
+        data[i, 4] = c2
+        data[i, 5] = chg
+        prev = cat
+    end
+    return markdown_table(; data=data, header=header)
+end
+
 function _rich_table(
     combined_results::OrderedDict;
     key::String,
     time_unit::Union{Nothing,Symbol},
     threshold::Float64,
     emoji::Bool,
+    collapse::Bool=false,
 )
     revs = collect(keys(combined_results))
     base_res = combined_results[revs[1]]
     cand_res = combined_results[revs[2]]
-    all_keys = _ordered_keys(combined_results)
 
     cutoff = 14
     _abbrev(h) = length(h) <= cutoff ? h : first(h, cutoff) * "..."
-    header = String[
-        "Benchmark", _abbrev(string(revs[1])), _abbrev(string(revs[2])), "Change"
-    ]
+    rev1 = _abbrev(string(revs[1]))
+    rev2 = _abbrev(string(revs[2]))
 
-    sig = Tuple{Bool,Float64,Vector{String}}[]  # (is_time_to_load, |change|, row)
-    unc = Vector{String}[]
-    n_reg = 0
-    n_faster = 0
-    for k in all_keys
+    # (is_time_to_load, category, -|change|, row) — sorted so categories cluster,
+    # time_to_load sinks to the bottom, and within a category the worst is first.
+    Entry = Tuple{Bool,String,Float64,NTuple{4,String}}
+    slower = Entry[]
+    faster = Entry[]
+    unchanged = NTuple{4,String}[]
+    for k in _ordered_keys(combined_results)
         c1 = _cell(get(base_res, k, missing), key, time_unit, k)
         c2 = _cell(get(cand_res, k, missing), key, time_unit, k)
         if !(haskey(base_res, k) && haskey(cand_res, k))
-            push!(unc, String[k, c1, c2, ""])
+            push!(unchanged, (k, c1, c2, "—"))
             continue
         end
         bc = compute_change(base_res[k], cand_res[k]; key=key, threshold=threshold)
         if bc.significant
-            row = String["$(_mark(bc.dir, emoji)) $k", c1, c2, format_change(bc; bold=true)]
-            push!(sig, (k == "time_to_load", abs(bc.change), row))
-            bc.dir === :regression ? (n_reg += 1) : (n_faster += 1)
+            arrow = _arrow(bc.dir === :regression ? :worse : :better, emoji)
+            row = (k, c1, c2, "$arrow $(format_change(bc; bold=true))")
+            entry = (k == "time_to_load", _category(k), -abs(bc.change), row)
+            bc.dir === :regression ? push!(slower, entry) : push!(faster, entry)
         else
-            push!(unc, String[k, c1, c2, format_change(bc; bold=false)])
+            push!(unchanged, (k, c1, c2, format_change(bc; bold=false)))
         end
     end
+    sort!(slower; by=t -> (t[1], t[2], t[3]))
+    sort!(faster; by=t -> (t[1], t[2], t[3]))
+    slow_rows = NTuple{4,String}[t[4] for t in slower]
+    fast_rows = NTuple{4,String}[t[4] for t in faster]
 
-    # worst-first, but time_to_load pinned to the end of the significant table
-    sort!(sig; by=t -> (t[1], -t[2]))
-    sig_rows = [t[3] for t in sig]
-    n_unchanged = length(unc)
+    n_s = length(slow_rows)
+    n_f = length(fast_rows)
+    n_u = length(unchanged)
+    worse = _dot(:worse, emoji)
+    better = _dot(:better, emoji)
+    equal = _dot(:equal, emoji)
+
+    # (dot, title, rows) for each populated bucket, in display order.
+    buckets = Tuple{String,String,Vector{NTuple{4,String}}}[]
+    n_s > 0 && push!(buckets, (worse, "Slower", slow_rows))
+    n_f > 0 && push!(buckets, (better, "Faster", fast_rows))
+    n_u > 0 && push!(buckets, (equal, "Unchanged", unchanged))
 
     io = IOBuffer()
-    println(
-        io,
-        verdict_line(n_reg, n_faster, n_unchanged; key=key, threshold=threshold, emoji=emoji),
-    )
+    println(io, "### $(_mode_label(key, emoji))")
     println(io)
-    if !isempty(sig_rows)
-        print(io, markdown_table(; data=permutedims(hcat(sig_rows...)), header=header))
+    println(io, "$worse **$n_s slower** · $better **$n_f faster** · $equal **$n_u unchanged**")
+    println(io)
+    if collapse
+        # Summary-only: every table lives inside one collapsible block, so the
+        # rendered comment is always the header + one-line summary + toggle.
+        println(io, "<details><summary>Details</summary>")
         println(io)
-    end
-    if n_unchanged > 0
-        noun = n_unchanged == 1 ? "unchanged benchmark" : "unchanged benchmarks"
-        println(io, "<details><summary>$(_mark(:none, emoji)) $n_unchanged $noun</summary>")
-        println(io)
-        print(io, markdown_table(; data=permutedims(hcat(unc...)), header=header))
-        println(io)
+        for (i, (dot, title, rows)) in enumerate(buckets)
+            i == 1 || (println(io, "---"); println(io))
+            println(io, "#### $dot $title")
+            println(io)
+            print(io, _grouped_table(rows, rev1, rev2))
+            println(io)
+        end
         println(io, "</details>")
+    else
+        # Default: Slower/Faster shown up front, Unchanged tucked into <details>.
+        # Each populated bucket is preceded by a horizontal rule.
+        for (dot, title, rows) in buckets
+            println(io, "---")
+            println(io)
+            if title == "Unchanged"
+                println(io, "<details><summary>$dot $(length(rows)) unchanged</summary>")
+                println(io)
+                print(io, _grouped_table(rows, rev1, rev2))
+                println(io)
+                println(io, "</details>")
+            else
+                println(io, "#### $dot $title")
+                println(io)
+                print(io, _grouped_table(rows, rev1, rev2))
+                println(io)
+            end
+        end
     end
     return String(take!(io))
 end
