@@ -101,6 +101,63 @@ function compute_change(
     return BenchChange(change, dir, significant)
 end
 
+function _mark(dir::Symbol, emoji::Bool)
+    if emoji
+        return dir === :regression ? "🔴" : dir === :improvement ? "🟢" : "➖"
+    else
+        return dir === :regression ? "^" : dir === :improvement ? "v" : "-"
+    end
+end
+
+function format_change(bc::BenchChange; bold::Bool)
+    ismissing(bc.change) && return "—"
+    pct = bc.change * 100
+    s = abs(pct) < 10 ? @sprintf("%+.1f%%", pct) : @sprintf("%+.0f%%", pct)
+    if s == "+0.0%" || s == "-0.0%"
+        s = "0%"
+    end
+    return bold ? "**" * s * "**" : s
+end
+
+function verdict_line(
+    n_reg::Int, n_faster::Int, n_unchanged::Int; key::String, threshold::Float64, emoji::Bool
+)
+    label = key == "memory" ? "Memory" : "Time"
+    non_m = _mark(:none, emoji)
+    if n_reg == 0 && n_faster == 0
+        pct = round(Int, threshold * 100)
+        noun = n_unchanged == 1 ? "benchmark" : "benchmarks"
+        return "**$label** — $non_m $n_unchanged $noun, none beyond ±$pct%"
+    end
+    reg_m = _mark(:regression, emoji)
+    imp_m = _mark(:improvement, emoji)
+    reg = "$reg_m $n_reg regression" * (n_reg == 1 ? "" : "s")
+    fast = "$imp_m $n_faster faster"
+    unch = "$non_m $n_unchanged unchanged"
+    return "**$label** — $reg · $fast · $unch"
+end
+
+function format_time_median(val::Dict; time_unit::Union{Nothing,Symbol}=nothing)
+    if time_unit === nothing
+        unit, unit_name = get_reasonable_time_unit([val["median"]])
+    else
+        unit, unit_name = get_time_unit_scale(time_unit)
+    end
+    return @sprintf("%.3g %s", val["median"] * unit, unit_name)
+end
+format_time_median(::Missing; time_unit::Union{Nothing,Symbol}=nothing) = ""
+
+function format_memory_pretty(val::Dict)
+    allocs = get(val, "allocs", nothing)
+    memory = get(val, "memory", nothing)
+    (isnothing(allocs) || isnothing(memory)) && return ""
+    au, an = get_reasonable_allocs_unit(allocs)
+    mu, mn = get_reasonable_memory_unit(memory)
+    allocs_str = @sprintf("%.3g%s", allocs * au, an)
+    return @sprintf("%s allocs · %.3g %s", allocs_str, memory * mu, mn)
+end
+format_memory_pretty(::Missing) = ""
+
 """
     create_table(combined_results::OrderedDict; kws...)
 

@@ -396,6 +396,46 @@ end
     @test !bc.significant
 end
 
+@testitem "formatting helpers" begin
+    using AirspeedVelocity
+    const TU = AirspeedVelocity.TableUtils
+
+    reg = TU.BenchChange(0.4, :regression, true)
+    imp = TU.BenchChange(-0.3, :improvement, true)
+    small = TU.BenchChange(0.015, :regression, false)
+    zero = TU.BenchChange(0.0, :none, false)
+    na = TU.BenchChange(missing, :na, false)
+
+    @test TU.format_change(reg; bold=true) == "**+40%**"
+    @test TU.format_change(imp; bold=true) == "**-30%**"
+    @test TU.format_change(small; bold=false) == "+1.5%"
+    @test TU.format_change(zero; bold=false) == "0%"
+    @test TU.format_change(na; bold=false) == "—"
+
+    @test TU._mark(:regression, true) == "🔴"
+    @test TU._mark(:improvement, true) == "🟢"
+    @test TU._mark(:none, true) == "➖"
+
+    v = TU.verdict_line(1, 1, 1; key="median", threshold=0.1, emoji=true)
+    @test occursin("**Time**", v)
+    @test occursin("🔴 1 regression", v)
+    @test occursin("🟢 1 faster", v)
+    @test occursin("➖ 1 unchanged", v)
+
+    v2 = TU.verdict_line(0, 0, 2; key="median", threshold=0.1, emoji=true)
+    @test occursin("➖ 2 benchmarks, none beyond ±10%", v2)
+
+    vm = TU.verdict_line(2, 0, 0; key="memory", threshold=0.1, emoji=true)
+    @test occursin("**Memory**", vm)
+    @test occursin("🔴 2 regressions", vm)
+
+    @test TU.format_time_median(Dict("median" => 1.2e9)) == "1.2 s"
+    @test TU.format_time_median(missing) == ""
+    @test TU.format_memory_pretty(Dict("allocs" => 10, "memory" => 4.53 * 1024)) ==
+        "10 allocs · 4.53 kB"
+    @test TU.format_memory_pretty(missing) == ""
+end
+
 @testitem "Dirty repo with filter" begin
     using AirspeedVelocity
     using Pkg
