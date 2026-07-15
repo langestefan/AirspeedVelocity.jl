@@ -234,8 +234,10 @@ function _rich_table(
     all_keys = _ordered_keys(combined_results)
 
     cutoff = 14
-    trunc(h) = length(h) <= cutoff ? h : first(h, cutoff) * "..."
-    header = String["Benchmark", trunc(string(revs[1])), trunc(string(revs[2])), "Change"]
+    _abbrev(h) = length(h) <= cutoff ? h : first(h, cutoff) * "..."
+    header = String[
+        "Benchmark", _abbrev(string(revs[1])), _abbrev(string(revs[2])), "Change"
+    ]
 
     sig = Tuple{Bool,Float64,Vector{String}}[]  # (is_time_to_load, |change|, row)
     unc = Vector{String}[]
@@ -285,11 +287,11 @@ function _rich_table(
 end
 
 """
-    create_table(combined_results::OrderedDict; kws...)
+    _plain_table(combined_results::OrderedDict; kws...)
 
-Create a markdown table of the results loaded from the `load_results` function.
-If there are two results for a given benchmark, will have an additional column
-for the comparison, assuming the first revision is one to compare against.
+Legacy renderer: a markdown table of the results loaded from the `load_results`
+function. If there are two results for a given benchmark, will have an additional
+column for the comparison, assuming the first revision is one to compare against.
 
 The `formatter` keyword argument generates the column value. By default, the table
 formats time as the median ± the interquantile range, and formats memory as the number
