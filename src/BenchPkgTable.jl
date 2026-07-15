@@ -53,7 +53,7 @@ legacy per-revision table with a ratio column.
 """
 Comonicon.@main function benchpkgtable(
     package_name::String="";
-    rev::String="dirty,{DEFAULT}",
+    rev::String="{DEFAULT},dirty",
     input_dir::String=".",
     ratio::Bool=false,
     mode::String="time",
