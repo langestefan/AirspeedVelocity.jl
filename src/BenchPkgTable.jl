@@ -110,6 +110,8 @@ Comonicon.@main function benchpkgtable(
     return nothing
 end
 
-translate_mode(s) = s == "time" ? "median" : s
+# Always return a `String`: `split(mode, ",")` yields `SubString`s, and
+# `create_table`/`_rich_table` require `key::String`.
+translate_mode(s) = s == "time" ? "median" : String(s)
 
 end # AirspeedVelocity.BenchPkgTable

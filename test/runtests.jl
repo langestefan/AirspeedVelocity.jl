@@ -533,6 +533,15 @@ end
     @test occursin("### ⏱️ Time", rich)       # rich section header present
     @test occursin("🔴 **1 slower**", rich)    # v1->v2 is a 2x slowdown
 
+    # mode="time,memory": exercises translate_mode on the comma-split SubStrings
+    # (the "memory" mode must render, not throw on a SubString key).
+    both = grab(
+        () -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir, mode="time,memory")
+    )
+    @test occursin("### ⏱️ Time", both)
+    @test occursin("### 💾 Memory", both)
+    @test occursin("---", both)               # sections separated by a rule
+
     plain = grab(
         () -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir, plain=true)
     )
