@@ -161,6 +161,132 @@ format_memory_pretty(::Missing) = ""
 """
     create_table(combined_results::OrderedDict; kws...)
 
+Render a markdown comparison table. By default (exactly two revisions), emits the
+rich format: a verdict headline, significant benchmarks with 🔴/🟢 markers, and a
+collapsible `<details>` section for unchanged benchmarks. Pass `plain=true` for the
+legacy per-revision table with a ratio column. With a number of revisions other than
+two, always falls back to the legacy table.
+
+Keyword arguments: `key` ("median" or "memory"), `add_ratio_col`, `time_unit`,
+`formatter` (legacy path only); `plain`, `significance_threshold` (default 0.10),
+`emoji` (rich path only).
+"""
+function create_table(
+    combined_results::OrderedDict;
+    key="median",
+    add_ratio_col=true,
+    time_unit::Union{Nothing,Symbol}=nothing,
+    formatter=nothing,
+    plain::Bool=false,
+    significance_threshold::Float64=0.10,
+    emoji::Bool=true,
+)
+    if plain || length(combined_results) != 2
+        return _plain_table(
+            combined_results;
+            key=key,
+            add_ratio_col=add_ratio_col,
+            time_unit=time_unit,
+            formatter=formatter,
+        )
+    end
+    return _rich_table(
+        combined_results;
+        key=key,
+        time_unit=time_unit,
+        threshold=significance_threshold,
+        emoji=emoji,
+    )
+end
+
+function _ordered_keys(combined_results::OrderedDict)
+    all_keys = [keys(first(values(combined_results)))...]
+    for extra_key in union([keys(v) for v in values(combined_results)]...)
+        in(extra_key, all_keys) || push!(all_keys, extra_key)
+    end
+    if in("time_to_load", all_keys)
+        deleteat!(all_keys, findfirst(==("time_to_load"), all_keys))
+        push!(all_keys, "time_to_load")
+    end
+    return all_keys
+end
+
+function _cell(val, key::String, time_unit::Union{Nothing,Symbol}, rowname::String)
+    ismissing(val) && return ""
+    if key == "memory"
+        return format_memory_pretty(val)
+    else
+        tu = rowname == "time_to_load" ? nothing : time_unit
+        return format_time_median(val; time_unit=tu)
+    end
+end
+
+function _rich_table(
+    combined_results::OrderedDict;
+    key::String,
+    time_unit::Union{Nothing,Symbol},
+    threshold::Float64,
+    emoji::Bool,
+)
+    revs = collect(keys(combined_results))
+    base_res = combined_results[revs[1]]
+    cand_res = combined_results[revs[2]]
+    all_keys = _ordered_keys(combined_results)
+
+    cutoff = 14
+    trunc(h) = length(h) <= cutoff ? h : first(h, cutoff) * "..."
+    header = String["Benchmark", trunc(string(revs[1])), trunc(string(revs[2])), "Change"]
+
+    sig = Tuple{Bool,Float64,Vector{String}}[]  # (is_time_to_load, |change|, row)
+    unc = Vector{String}[]
+    n_reg = 0
+    n_faster = 0
+    for k in all_keys
+        c1 = _cell(get(base_res, k, missing), key, time_unit, k)
+        c2 = _cell(get(cand_res, k, missing), key, time_unit, k)
+        if !(haskey(base_res, k) && haskey(cand_res, k))
+            push!(unc, String[k, c1, c2, ""])
+            continue
+        end
+        bc = compute_change(base_res[k], cand_res[k]; key=key, threshold=threshold)
+        if bc.significant
+            row = String["$(_mark(bc.dir, emoji)) $k", c1, c2, format_change(bc; bold=true)]
+            push!(sig, (k == "time_to_load", abs(bc.change), row))
+            bc.dir === :regression ? (n_reg += 1) : (n_faster += 1)
+        else
+            push!(unc, String[k, c1, c2, format_change(bc; bold=false)])
+        end
+    end
+
+    # worst-first, but time_to_load pinned to the end of the significant table
+    sort!(sig; by=t -> (t[1], -t[2]))
+    sig_rows = [t[3] for t in sig]
+    n_unchanged = length(unc)
+
+    io = IOBuffer()
+    println(
+        io,
+        verdict_line(n_reg, n_faster, n_unchanged; key=key, threshold=threshold, emoji=emoji),
+    )
+    println(io)
+    if !isempty(sig_rows)
+        print(io, markdown_table(; data=permutedims(hcat(sig_rows...)), header=header))
+        println(io)
+    end
+    if n_unchanged > 0
+        noun = n_unchanged == 1 ? "unchanged benchmark" : "unchanged benchmarks"
+        println(io, "<details><summary>$(_mark(:none, emoji)) $n_unchanged $noun</summary>")
+        println(io)
+        print(io, markdown_table(; data=permutedims(hcat(unc...)), header=header))
+        println(io)
+        println(io, "</details>")
+    end
+    return String(take!(io))
+end
+
+"""
+    create_table(combined_results::OrderedDict; kws...)
+
 Create a markdown table of the results loaded from the `load_results` function.
 If there are two results for a given benchmark, will have an additional column
 for the comparison, assuming the first revision is one to compare against.
@@ -175,7 +301,7 @@ If not specified (default), the unit is automatically chosen based on the magnit
 of the value. The `time_to_load` benchmark always uses auto-detection regardless
 of this setting.
 """
-function create_table(
+function _plain_table(
     combined_results::OrderedDict;
     key="median",
     add_ratio_col=true,

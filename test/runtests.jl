@@ -220,7 +220,7 @@ end
     | bench2 | 0.2 ± 0.2 ms | 20 ± 20 μs | 10 ± 14     |
     | bench3 |              | 20 ± 20 μs |             |
     """
-    @test truth ≈ create_table(combined_results)
+    @test truth ≈ create_table(combined_results; plain=true)
 
     truth = """
     |        | v1                 | v2                | v1 / v2 |
@@ -230,7 +230,10 @@ end
     | bench3 |                    | 4  allocs: 0.1 MB |         |
     """
     @test truth ≈ create_table(
-        combined_results; formatter=AirspeedVelocity.TableUtils.format_memory, key="memory"
+        combined_results;
+        formatter=AirspeedVelocity.TableUtils.format_memory,
+        key="memory",
+        plain=true,
     )
 
     tmpdir = mktempdir()
@@ -434,6 +437,60 @@ end
     @test TU.format_memory_pretty(Dict("allocs" => 10, "memory" => 4.53 * 1024)) ==
         "10 allocs · 4.53 kB"
     @test TU.format_memory_pretty(missing) == ""
+end
+
+@testitem "rich table generation" begin
+    using AirspeedVelocity
+    using OrderedCollections: OrderedDict
+    include("utils.jl")
+
+    combined_results = OrderedDict(
+        "v1" => OrderedDict(
+            "bench1" => Dict("median" => 1.2e9, "75" => 1.3e9, "25" => 1.1e9),
+            "bench2" => Dict("median" => 2.0e5, "75" => 3.0e5, "25" => 1.0e5),
+        ),
+        "v2" => OrderedDict(
+            "bench1" => Dict("median" => 1.2e10, "75" => 1.3e10, "25" => 1.1e10),
+            "bench2" => Dict("median" => 2.0e4, "75" => 3.0e4, "25" => 1.0e4),
+            "bench3" => Dict("median" => 2.0e4, "75" => 3.0e4, "25" => 1.0e4),
+        ),
+    )
+
+    t = create_table(combined_results)  # rich is now the default for 2 revisions
+    @test occursin("**Time** — 🔴 1 regression · 🟢 1 faster · ➖ 1 unchanged", t)
+    @test occursin("🔴 bench1", t)
+    @test occursin("**+900%**", t)
+    @test occursin("🟢 bench2", t)
+    @test occursin("**-90%**", t)
+    @test occursin("<details><summary>➖ 1 unchanged benchmark</summary>", t)
+    @test occursin("bench3", t)
+    @test occursin("</details>", t)
+    # significant rows are above the collapsed section
+    @test findfirst("🔴 bench1", t)[1] < findfirst("<details>", t)[1]
+
+    # All-quiet case collapses everything into one <details>
+    quiet = OrderedDict(
+        "v1" => OrderedDict(
+            "a" => Dict("median" => 100.0, "75" => 110.0, "25" => 90.0),
+            "b" => Dict("median" => 100.0, "75" => 110.0, "25" => 90.0),
+        ),
+        "v2" => OrderedDict(
+            "a" => Dict("median" => 103.0, "75" => 113.0, "25" => 93.0),
+            "b" => Dict("median" => 101.0, "75" => 111.0, "25" => 91.0),
+        ),
+    )
+    q = create_table(quiet)
+    @test occursin("➖ 2 benchmarks, none beyond ±10%", q)
+    @test occursin("<details>", q)
+
+    # >2 revisions falls back to plain (no verdict)
+    three = OrderedDict(
+        "v1" => OrderedDict("a" => Dict("median" => 100.0)),
+        "v2" => OrderedDict("a" => Dict("median" => 100.0)),
+        "v3" => OrderedDict("a" => Dict("median" => 100.0)),
+    )
+    f = create_table(three)
+    @test !occursin("**Time**", f)
 end
 
 @testitem "Dirty repo with filter" begin
