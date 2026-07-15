@@ -15,8 +15,10 @@ using Comonicon
                             [--bench-on <arg>]
                             [-f, --filter <arg>]
                             [--nsamples-load-time <arg>]
+                            [--threshold <arg>]
                             [--tune]
                             [--dont-print]
+                            [--plain]
 
 Benchmark a package over a set of revisions.
 
@@ -42,10 +44,14 @@ Benchmark a package over a set of revisions.
 - `-f, --filter <arg>`: Filter the benchmarks to run (delimit by comma).
 - `--nsamples-load-time <arg>`: Number of samples to take when measuring load time of
     the package (default: 5). (This means starting a Julia process for each sample.)
+- `--threshold <arg>`: Relative change (e.g. 0.1 = 10%) required, in addition to
+    exceeding measurement noise, to flag a benchmark as a regression/improvement in
+    the default (rich) output (default: 0.1).
 - `--dont-print`: Don't print the table.
 
 # Flags
 
+- `--plain`: Emit the legacy table instead of the rich comparison output (default: false).
 - `--tune`: Whether to run benchmarks with tuning (default: false).
 
 """
@@ -63,6 +69,8 @@ Comonicon.@main function benchpkg(
     filter::String="",
     nsamples_load_time::Int=5,
     dont_print::Bool=false,
+    plain::Bool=false,
+    threshold::Float64=0.1,
 )
     revs = convert(Vector{String}, split(rev, ","))
     Base.filter!(!isempty, revs)
@@ -108,7 +116,13 @@ Comonicon.@main function benchpkg(
     if !dont_print
         combined_results = load_results(package_name, revs; input_dir=output_dir)
         println(
-            create_table(combined_results; add_ratio_col=length(revs) == 2, key="median")
+            create_table(
+                combined_results;
+                add_ratio_col=length(revs) == 2,
+                key="median",
+                plain=plain,
+                significance_threshold=threshold,
+            ),
         )
     end
 

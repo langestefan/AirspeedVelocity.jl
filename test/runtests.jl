@@ -493,6 +493,41 @@ end
     @test !occursin("**Time**", f)
 end
 
+@testitem "benchpkgtable plain vs rich flag" begin
+    using AirspeedVelocity
+    include("utils.jl")
+
+    tmpdir = mktempdir()
+    for (rev, base) in (("v1", 1000), ("v2", 2000))
+        open(joinpath(tmpdir, "results_TestPackage@$rev.json"), "w") do io
+            # one benchmark "b" whose times differ 2x between v1 and v2
+            write(
+                io,
+                """{"tags":[],"data":{"b":{"times":[$base,$base,$base,$base,$base]}}}""",
+            )
+        end
+    end
+
+    grab(f) = begin
+        orig = stdout
+        (rd, wr) = redirect_stdout()
+        f()
+        redirect_stdout(orig)
+        close(wr)
+        read(rd, String)
+    end
+
+    rich = grab(() -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir))
+    @test occursin("**Time**", rich)          # verdict headline present
+    @test occursin("🔴", rich)                 # v1->v2 is a 2x slowdown
+
+    plain = grab(
+        () -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir, plain=true)
+    )
+    @test !occursin("**Time**", plain)        # legacy table, no verdict
+    @test occursin("v1 ", plain)
+end
+
 @testitem "Dirty repo with filter" begin
     using AirspeedVelocity
     using Pkg
