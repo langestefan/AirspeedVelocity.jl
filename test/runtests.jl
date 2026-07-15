@@ -689,7 +689,9 @@ end
     end
 
     path = joinpath(tmpdir, "TestPackage")
-    run(`git init`)
+    # Force the initial branch name so the `rev="master"` below resolves
+    # regardless of the machine's `init.defaultBranch` (modern git uses `main`).
+    run(`git init -b master`)
     run(`git add .`)
     run(`git config user.name "user"`)
     run(`git config user.email "user@example.com"`)
