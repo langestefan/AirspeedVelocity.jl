@@ -64,7 +64,7 @@ struct BenchChange
     significant::Bool
 end
 
-function _half_iqr(d::AbstractDict)
+function _half_iqr(d::AbstractDict)::Union{Float64,Missing}
     if (haskey(d, "75") && haskey(d, "25"))
         (Float64(d["75"]) - Float64(d["25"])) / 2
     else
@@ -199,10 +199,10 @@ function create_table(
     )
 end
 
-function _ordered_keys(combined_results::OrderedDict)
-    all_keys = [keys(first(values(combined_results)))...]
+function _ordered_keys(combined_results::OrderedDict)::Vector{String}
+    all_keys = String[keys(first(values(combined_results)))...]
     for extra_key in union([keys(v) for v in values(combined_results)]...)
-        in(extra_key, all_keys) || push!(all_keys, extra_key)
+        in(extra_key, all_keys) || push!(all_keys, string(extra_key))
     end
     if in("time_to_load", all_keys)
         deleteat!(all_keys, findfirst(==("time_to_load"), all_keys))
