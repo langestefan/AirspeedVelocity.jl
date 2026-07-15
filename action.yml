@@ -149,19 +149,16 @@ runs:
         echo "## Benchmark Results (Julia v${{ inputs.julia-version }})" > body.md
         echo "" >> body.md
 
-        # One independent <details> block per requested mode
+        # One section per requested mode; benchpkgtable emits the verdict headline
+        # and its own collapsible section for unchanged benchmarks.
         IFS=',' read -ra MODES <<< "${{ inputs.mode }}"
         for m in "${MODES[@]}"; do
           {
-            echo "<details><summary>${m^} benchmarks</summary>"
-            echo ""
             benchpkgtable "${{ steps.pkg.outputs.package_name }}" \
               --input-dir=results/ \
               --mode=$m \
               --ratio \
               ${{ steps.flags.outputs.table_args }}
-            echo ""
-            echo "</details>"
             echo ""
           } >> body.md
         done

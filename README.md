@@ -107,7 +107,7 @@ jobs:
           job-summary: 'true'
 ```
 
-Both workflows run AirspeedVelocity and display results with separate, collapsible tables for runtime and memory.
+Both workflows run AirspeedVelocity and display results with a verdict headline per mode (time/memory): significant regressions and improvements are shown up front with 🔴/🟢 markers, while unchanged benchmarks are tucked into a collapsible section.
 
 ### Multiple Julia versions
 
@@ -246,8 +246,10 @@ built into the `~/.julia/bin` folder:
                             [--bench-on <arg>]
                             [-f, --filter <arg>]
                             [--nsamples-load-time <arg>]
+                            [--threshold <arg>]
                             [--tune]
                             [--dont-print]
+                            [--plain]
 
 Benchmark a package over a set of revisions.
 
@@ -273,10 +275,14 @@ Benchmark a package over a set of revisions.
 - `-f, --filter <arg>`: Filter the benchmarks to run (delimit by comma).
 - `--nsamples-load-time <arg>`: Number of samples to take when measuring load time of
     the package (default: 5). (This means starting a Julia process for each sample.)
+- `--threshold <arg>`: Relative change (e.g. 0.1 = 10%) required, in addition to
+    exceeding measurement noise, to flag a benchmark as a regression/improvement in
+    the default (rich) output (default: 0.1).
 - `--dont-print`: Don't print the table.
 
 #### Flags
 
+- `--plain`: Emit the legacy table instead of the rich comparison output (default: false).
 - `--tune`: Whether to run benchmarks with tuning (default: false).
 ```
 
@@ -292,8 +298,15 @@ You can also just generate a table from stored JSON results:
                                  [--force-time-unit <arg>]
                                  [--url <arg>]
                                  [--path <arg>]
+                                 [--threshold <arg>]
+                                 [--plain]
 
 Print a table of the benchmarks of a package as created with `benchpkg`.
+
+By default (comparing exactly two revisions), prints the rich comparison format:
+a verdict headline, significant regressions/improvements marked with 🔴/🟢, and
+unchanged benchmarks in a collapsible section. Pass `--plain` for the legacy
+per-revision table with a ratio column.
 
 #### Arguments
 
@@ -310,9 +323,14 @@ Print a table of the benchmarks of a package as created with `benchpkg`.
    Only used to get the package name.
 - `--force-time-unit <arg>`: Force a time unit for all benchmark results (excluding load time).
   Valid values are "ns", "μs", "us", "ms", "s", "h". If not specified, units are chosen automatically.
+- `--threshold <arg>`: Relative change (e.g. 0.1 = 10%) required, in addition to
+  exceeding measurement noise, to flag a benchmark as a regression/improvement in
+  the default (rich) output (default: 0.1).
 
 #### Flags
 
+- `--plain`: Emit the legacy per-revision table with a ratio column instead of the
+    rich comparison output (default: false).
 - `--ratio`: Whether to include the ratio (default: false). Only applies when
     comparing two revisions.
 - `--mode`: Table mode(s). Valid values are "time" (default), to print the
