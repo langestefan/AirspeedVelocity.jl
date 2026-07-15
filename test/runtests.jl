@@ -324,6 +324,78 @@ end
         AirspeedVelocity.Utils.get_time_unit_scale("us")
 end
 
+@testitem "compute_change significance" begin
+    using AirspeedVelocity
+    const TU = AirspeedVelocity.TableUtils
+
+    # Clear regression: +40%, well outside noise
+    bc = TU.compute_change(
+        Dict("median" => 100.0, "25" => 95.0, "75" => 105.0),
+        Dict("median" => 140.0, "25" => 135.0, "75" => 145.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.dir == :regression
+    @test bc.significant
+    @test isapprox(bc.change, 0.4; atol=1e-9)
+
+    # Clear improvement: -30%
+    bc = TU.compute_change(
+        Dict("median" => 100.0, "25" => 95.0, "75" => 105.0),
+        Dict("median" => 70.0, "25" => 65.0, "75" => 75.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.dir == :improvement
+    @test bc.significant
+
+    # Big % but swamped by noise -> not significant
+    bc = TU.compute_change(
+        Dict("median" => 100.0, "25" => 0.0, "75" => 200.0),
+        Dict("median" => 140.0, "25" => 40.0, "75" => 240.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.dir == :regression
+    @test !bc.significant
+
+    # Missing IQR -> noise gate skipped, threshold-only
+    bc = TU.compute_change(
+        Dict("median" => 100.0), Dict("median" => 140.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.significant
+
+    # Below threshold -> not significant
+    bc = TU.compute_change(
+        Dict("median" => 100.0), Dict("median" => 103.0);
+        key="median", threshold=0.1,
+    )
+    @test !bc.significant
+
+    # Zero baseline -> :na
+    bc = TU.compute_change(
+        Dict("median" => 0.0), Dict("median" => 5.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.dir == :na
+    @test ismissing(bc.change)
+    @test !bc.significant
+
+    # Memory: threshold-only (no noise gate), +20% is significant
+    bc = TU.compute_change(
+        Dict("memory" => 1000.0, "allocs" => 5),
+        Dict("memory" => 1200.0, "allocs" => 5);
+        key="memory", threshold=0.1,
+    )
+    @test bc.dir == :regression
+    @test bc.significant
+
+    # Memory: +5% not significant
+    bc = TU.compute_change(
+        Dict("memory" => 1000.0), Dict("memory" => 1050.0);
+        key="memory", threshold=0.1,
+    )
+    @test !bc.significant
+end
+
 @testitem "Dirty repo with filter" begin
     using AirspeedVelocity
     using Pkg

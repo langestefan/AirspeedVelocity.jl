@@ -58,6 +58,49 @@ function format_memory(::Missing)
     return ""
 end
 
+struct BenchChange
+    change::Union{Float64,Missing}
+    dir::Symbol
+    significant::Bool
+end
+
+function _half_iqr(d::AbstractDict)
+    if (haskey(d, "75") && haskey(d, "25"))
+        (Float64(d["75"]) - Float64(d["25"])) / 2
+    else
+        missing
+    end
+end
+
+function compute_change(
+    base::AbstractDict, cand::AbstractDict; key::String, threshold::Float64
+)
+    b = get(base, key, missing)
+    c = get(cand, key, missing)
+    if ismissing(b) || ismissing(c) || b === nothing || c === nothing || b == 0
+        return BenchChange(missing, :na, false)
+    end
+    bf = Float64(b)
+    cf = Float64(c)
+    change = (cf - bf) / bf
+    dir = if change > 0
+        :regression
+    elseif change < 0
+        :improvement
+    else
+        :none
+    end
+    outside = if key == "median"
+        eb = _half_iqr(base)
+        ec = _half_iqr(cand)
+        (ismissing(eb) || ismissing(ec)) ? true : abs(cf - bf) > sqrt(eb^2 + ec^2)
+    else
+        true
+    end
+    significant = abs(change) >= threshold && outside && dir != :none
+    return BenchChange(change, dir, significant)
+end
+
 """
     create_table(combined_results::OrderedDict; kws...)
 
