@@ -316,10 +316,17 @@ function _rich_table(
     n_f > 0 && push!(buckets, (better, "Faster", fast_rows))
     n_u > 0 && push!(buckets, (equal, "Unchanged", unchanged))
 
+    # Compact vertical summary of the three counts.
+    summary = [
+        "$worse Slower"    string(n_s)
+        "$better Faster"   string(n_f)
+        "$equal Unchanged" string(n_u)
+    ]
+
     io = IOBuffer()
     println(io, "### $(_mode_label(key, emoji))")
     println(io)
-    println(io, "$worse **$n_s slower** · $better **$n_f faster** · $equal **$n_u unchanged**")
+    print(io, markdown_table(; data=summary, header=String["Result", "Count"]))
     println(io)
     if collapse
         # Summary-only: every table lives inside one collapsible block, so the

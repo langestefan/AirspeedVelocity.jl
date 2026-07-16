@@ -456,7 +456,10 @@ end
 
     t = create_table(combined_results)  # rich is now the default for 2 revisions
     @test occursin("### ⏱️ Time", t)
-    @test occursin("🔴 **1 slower** · 🟢 **1 faster** · ⚪ **1 unchanged**", t)
+    # vertical summary table of the three counts
+    @test occursin(r"🔴 Slower *\| *1", t)
+    @test occursin(r"🟢 Faster *\| *1", t)
+    @test occursin(r"⚪ Unchanged *\| *1", t)
     @test occursin("#### 🔴 Slower", t)
     @test occursin("#### 🟢 Faster", t)
     @test occursin("⬆️ **+900%**", t)   # bench1 regression: value up = slower
@@ -471,12 +474,12 @@ end
     # collapse=true: only the header + one-line summary stay visible; every table
     # (including Slower) lives inside a single <details> block.
     tc = create_table(combined_results; collapse=true)
-    @test occursin("🔴 **1 slower** · 🟢 **1 faster** · ⚪ **1 unchanged**", tc)
+    @test occursin(r"🔴 Slower *\| *1", tc)
     @test occursin("<details><summary>Details</summary>", tc)
     @test occursin("#### ⚪ Unchanged", tc)   # unchanged shown as a bucket, not nested summary
     @test findfirst("<details>", tc)[1] < findfirst("#### 🔴 Slower", tc)[1]
-    # summary precedes the collapsible block
-    @test findfirst("🔴 **1 slower**", tc)[1] < findfirst("<details>", tc)[1]
+    # summary table precedes the collapsible block
+    @test findfirst("| Result", tc)[1] < findfirst("<details>", tc)[1]
 
     # All-quiet case: no Slower/Faster tables, everything collapsed
     quiet = OrderedDict(
@@ -490,7 +493,8 @@ end
         ),
     )
     q = create_table(quiet)
-    @test occursin("🔴 **0 slower** · 🟢 **0 faster** · ⚪ **2 unchanged**", q)
+    @test occursin(r"🔴 Slower *\| *0", q)
+    @test occursin(r"⚪ Unchanged *\| *2", q)
     @test !occursin("#### 🔴 Slower", q)
     @test occursin("<details>", q)
 
@@ -531,7 +535,7 @@ end
 
     rich = grab(() -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir))
     @test occursin("### ⏱️ Time", rich)       # rich section header present
-    @test occursin("🔴 **1 slower**", rich)    # v1->v2 is a 2x slowdown
+    @test occursin(r"🔴 Slower *\| *1", rich)  # v1->v2 is a 2x slowdown
 
     # mode="time,memory": exercises translate_mode on the comma-split SubStrings
     # (the "memory" mode must render, not throw on a SubString key).
