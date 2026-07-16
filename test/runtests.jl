@@ -220,7 +220,7 @@ end
     | bench2 | 0.2 ± 0.2 ms | 20 ± 20 μs | 10 ± 14     |
     | bench3 |              | 20 ± 20 μs |             |
     """
-    @test truth ≈ create_table(combined_results)
+    @test truth ≈ create_table(combined_results; plain=true)
 
     truth = """
     |        | v1                 | v2                | v1 / v2 |
@@ -230,7 +230,10 @@ end
     | bench3 |                    | 4  allocs: 0.1 MB |         |
     """
     @test truth ≈ create_table(
-        combined_results; formatter=AirspeedVelocity.TableUtils.format_memory, key="memory"
+        combined_results;
+        formatter=AirspeedVelocity.TableUtils.format_memory,
+        key="memory",
+        plain=true,
     )
 
     tmpdir = mktempdir()
@@ -322,6 +325,232 @@ end
     @test_throws ErrorException AirspeedVelocity.Utils.get_time_unit_scale("invalid_unit")
     @test AirspeedVelocity.Utils.get_time_unit_scale("μs") ==
         AirspeedVelocity.Utils.get_time_unit_scale("us")
+end
+
+@testitem "compute_change significance" begin
+    using AirspeedVelocity
+    const TU = AirspeedVelocity.TableUtils
+
+    # Clear regression: +40%, well outside noise
+    bc = TU.compute_change(
+        Dict("median" => 100.0, "25" => 95.0, "75" => 105.0),
+        Dict("median" => 140.0, "25" => 135.0, "75" => 145.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.dir == :regression
+    @test bc.significant
+    @test isapprox(bc.change, 0.4; atol=1e-9)
+
+    # Clear improvement: -30%
+    bc = TU.compute_change(
+        Dict("median" => 100.0, "25" => 95.0, "75" => 105.0),
+        Dict("median" => 70.0, "25" => 65.0, "75" => 75.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.dir == :improvement
+    @test bc.significant
+
+    # Big % but swamped by noise -> not significant
+    bc = TU.compute_change(
+        Dict("median" => 100.0, "25" => 0.0, "75" => 200.0),
+        Dict("median" => 140.0, "25" => 40.0, "75" => 240.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.dir == :regression
+    @test !bc.significant
+
+    # Missing IQR -> noise gate skipped, threshold-only
+    bc = TU.compute_change(
+        Dict("median" => 100.0), Dict("median" => 140.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.significant
+
+    # Below threshold -> not significant
+    bc = TU.compute_change(
+        Dict("median" => 100.0), Dict("median" => 103.0);
+        key="median", threshold=0.1,
+    )
+    @test !bc.significant
+
+    # Zero baseline -> :na
+    bc = TU.compute_change(
+        Dict("median" => 0.0), Dict("median" => 5.0);
+        key="median", threshold=0.1,
+    )
+    @test bc.dir == :na
+    @test ismissing(bc.change)
+    @test !bc.significant
+
+    # Memory: threshold-only (no noise gate), +20% is significant
+    bc = TU.compute_change(
+        Dict("memory" => 1000.0, "allocs" => 5),
+        Dict("memory" => 1200.0, "allocs" => 5);
+        key="memory", threshold=0.1,
+    )
+    @test bc.dir == :regression
+    @test bc.significant
+
+    # Memory: +5% not significant
+    bc = TU.compute_change(
+        Dict("memory" => 1000.0), Dict("memory" => 1050.0);
+        key="memory", threshold=0.1,
+    )
+    @test !bc.significant
+end
+
+@testitem "formatting helpers" begin
+    using AirspeedVelocity
+    const TU = AirspeedVelocity.TableUtils
+
+    reg = TU.BenchChange(0.4, :regression, true)
+    imp = TU.BenchChange(-0.3, :improvement, true)
+    small = TU.BenchChange(0.015, :regression, false)
+    zero = TU.BenchChange(0.0, :none, false)
+    na = TU.BenchChange(missing, :na, false)
+
+    @test TU.format_change(reg; bold=true) == "**+40%**"
+    @test TU.format_change(imp; bold=true) == "**-30%**"
+    @test TU.format_change(small; bold=false) == "+1.5%"
+    @test TU.format_change(zero; bold=false) == "0%"
+    @test TU.format_change(na; bold=false) == "—"
+
+    @test TU._dot(:worse, true) == "🔴"
+    @test TU._dot(:better, true) == "🟢"
+    @test TU._dot(:equal, true) == "⚪"
+    @test TU._arrow(:worse, true) == "⬆️"
+    @test TU._arrow(:better, true) == "⬇️"
+
+    @test TU._mode_label("median", true) == "⏱️ Time"
+    @test TU._mode_label("memory", true) == "💾 Memory"
+    @test TU._mode_label("median", false) == "Time"
+
+    @test TU._category("sort/n=1000") == "sort"
+    @test TU._leaf("sort/n=1000") == "n=1000"
+    @test TU._category("time_to_load") == "·"   # no "/" -> no category
+    @test TU._leaf("time_to_load") == "time_to_load"
+
+    @test TU.format_time_median(Dict("median" => 1.2e9)) == "1.2 s"
+    @test TU.format_time_median(missing) == ""
+    @test TU.format_memory_pretty(Dict("allocs" => 10, "memory" => 4.53 * 1024)) ==
+        "10 allocs · 4.53 kB"
+    @test TU.format_memory_pretty(missing) == ""
+end
+
+@testitem "rich table generation" begin
+    using AirspeedVelocity
+    using OrderedCollections: OrderedDict
+    include("utils.jl")
+
+    combined_results = OrderedDict(
+        "v1" => OrderedDict(
+            "bench1" => Dict("median" => 1.2e9, "75" => 1.3e9, "25" => 1.1e9),
+            "bench2" => Dict("median" => 2.0e5, "75" => 3.0e5, "25" => 1.0e5),
+        ),
+        "v2" => OrderedDict(
+            "bench1" => Dict("median" => 1.2e10, "75" => 1.3e10, "25" => 1.1e10),
+            "bench2" => Dict("median" => 2.0e4, "75" => 3.0e4, "25" => 1.0e4),
+            "bench3" => Dict("median" => 2.0e4, "75" => 3.0e4, "25" => 1.0e4),
+        ),
+    )
+
+    t = create_table(combined_results)  # rich is now the default for 2 revisions
+    @test occursin("### ⏱️ Time", t)
+    # vertical summary table of the three counts
+    @test occursin(r"🔴 Slower *\| *1", t)
+    @test occursin(r"🟢 Faster *\| *1", t)
+    @test occursin(r"⚪ Unchanged *\| *1", t)
+    @test occursin("#### 🔴 Slower", t)
+    @test occursin("#### 🟢 Faster", t)
+    @test occursin("⬆️ **+900%**", t)   # bench1 regression: value up = slower
+    @test occursin("⬇️ **-90%**", t)    # bench2 improvement: value down = faster
+    @test occursin("| Group | Benchmark |", t)   # grouped columns
+    @test occursin("<details><summary>⚪ 1 unchanged</summary>", t)
+    @test occursin("bench3", t)
+    @test occursin("</details>", t)
+    # the Slower table appears above the collapsed unchanged section
+    @test findfirst("#### 🔴 Slower", t)[1] < findfirst("<details>", t)[1]
+
+    # collapse=true: only the header + one-line summary stay visible; every table
+    # (including Slower) lives inside a single <details> block.
+    tc = create_table(combined_results; collapse=true)
+    @test occursin(r"🔴 Slower *\| *1", tc)
+    @test occursin("<details><summary>Details</summary>", tc)
+    @test occursin("#### ⚪ Unchanged", tc)   # unchanged shown as a bucket, not nested summary
+    @test findfirst("<details>", tc)[1] < findfirst("#### 🔴 Slower", tc)[1]
+    # summary table precedes the collapsible block
+    @test findfirst("| Result", tc)[1] < findfirst("<details>", tc)[1]
+
+    # All-quiet case: no Slower/Faster tables, everything collapsed
+    quiet = OrderedDict(
+        "v1" => OrderedDict(
+            "a" => Dict("median" => 100.0, "75" => 110.0, "25" => 90.0),
+            "b" => Dict("median" => 100.0, "75" => 110.0, "25" => 90.0),
+        ),
+        "v2" => OrderedDict(
+            "a" => Dict("median" => 103.0, "75" => 113.0, "25" => 93.0),
+            "b" => Dict("median" => 101.0, "75" => 111.0, "25" => 91.0),
+        ),
+    )
+    q = create_table(quiet)
+    @test occursin(r"🔴 Slower *\| *0", q)
+    @test occursin(r"⚪ Unchanged *\| *2", q)
+    @test !occursin("#### 🔴 Slower", q)
+    @test occursin("<details>", q)
+
+    # >2 revisions falls back to plain (no section header)
+    three = OrderedDict(
+        "v1" => OrderedDict("a" => Dict("median" => 100.0)),
+        "v2" => OrderedDict("a" => Dict("median" => 100.0)),
+        "v3" => OrderedDict("a" => Dict("median" => 100.0)),
+    )
+    f = create_table(three)
+    @test !occursin("###", f)
+    @test !occursin("Slower", f)
+end
+
+@testitem "benchpkgtable plain vs rich flag" begin
+    using AirspeedVelocity
+    include("utils.jl")
+
+    tmpdir = mktempdir()
+    for (rev, base) in (("v1", 1000), ("v2", 2000))
+        open(joinpath(tmpdir, "results_TestPackage@$rev.json"), "w") do io
+            # one benchmark "b" whose times differ 2x between v1 and v2
+            write(
+                io,
+                """{"tags":[],"data":{"b":{"times":[$base,$base,$base,$base,$base]}}}""",
+            )
+        end
+    end
+
+    grab(f) = begin
+        orig = stdout
+        (rd, wr) = redirect_stdout()
+        f()
+        redirect_stdout(orig)
+        close(wr)
+        read(rd, String)
+    end
+
+    rich = grab(() -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir))
+    @test occursin("### ⏱️ Time", rich)       # rich section header present
+    @test occursin(r"🔴 Slower *\| *1", rich)  # v1->v2 is a 2x slowdown
+
+    # mode="time,memory": exercises translate_mode on the comma-split SubStrings
+    # (the "memory" mode must render, not throw on a SubString key).
+    both = grab(
+        () -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir, mode="time,memory")
+    )
+    @test occursin("### ⏱️ Time", both)
+    @test occursin("### 💾 Memory", both)
+    @test occursin("---", both)               # sections separated by a rule
+
+    plain = grab(
+        () -> benchpkgtable("TestPackage"; rev="v1,v2", input_dir=tmpdir, plain=true)
+    )
+    @test !occursin("###", plain)             # legacy table, no section header
+    @test occursin("v1 ", plain)
 end
 
 @testitem "Dirty repo with filter" begin
@@ -473,7 +702,9 @@ end
     end
 
     path = joinpath(tmpdir, "TestPackage")
-    run(`git init`)
+    # Force the initial branch name so the `rev="master"` below resolves
+    # regardless of the machine's `init.defaultBranch` (modern git uses `main`).
+    run(`git init -b master`)
     run(`git add .`)
     run(`git config user.name "user"`)
     run(`git config user.email "user@example.com"`)

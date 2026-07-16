@@ -12,8 +12,16 @@ using Comonicon
                                  [--force-time-unit <arg>]
                                  [--url <arg>]
                                  [--path <arg>]
+                                 [--threshold <arg>]
+                                 [--plain]
+                                 [--collapse]
 
 Print a table of the benchmarks of a package as created with `benchpkg`.
+
+By default (when comparing exactly two revisions), prints the rich comparison
+format: a verdict headline, significant regressions/improvements marked with
+🔴/🟢, and unchanged benchmarks in a collapsible section. Pass `--plain` for the
+legacy per-revision table with a ratio column.
 
 # Arguments
 
@@ -30,9 +38,17 @@ Print a table of the benchmarks of a package as created with `benchpkg`.
    Only used to get the package name.
 - `--force-time-unit <arg>`: Force a time unit for all benchmark results (excluding load time).
   Valid values are "ns", "μs", "us", "ms", "s", "h". If not specified, units are chosen automatically.
+- `--threshold <arg>`: Relative change (e.g. 0.1 = 10%) required, in addition to
+  exceeding measurement noise, to flag a benchmark as a regression/improvement
+  in the default (rich) output (default: 0.1).
 
 # Flags
 
+- `--plain`: Emit the legacy per-revision table with a ratio column instead of the
+    rich comparison output (default: false).
+- `--collapse`: Place every table inside one collapsible block per mode, leaving only
+    the section header and one-line summary visible (keeps comment size constant).
+    Rich output only (default: false).
 - `--ratio`: Whether to include the ratio (default: false). Only applies when
     comparing two revisions.
 - `--mode`: Table mode(s). Valid values are "time" (default), to print the
@@ -41,13 +57,16 @@ Print a table of the benchmarks of a package as created with `benchpkg`.
 """
 Comonicon.@main function benchpkgtable(
     package_name::String="";
-    rev::String="dirty,{DEFAULT}",
+    rev::String="{DEFAULT},dirty",
     input_dir::String=".",
     ratio::Bool=false,
     mode::String="time",
     force_time_unit::String="",
     url::String="",
     path::String="",
+    plain::Bool=false,
+    threshold::Float64=0.1,
+    collapse::Bool=false,
 )
     revs = convert(Vector{String}, split(rev, ","))
     Base.filter!(!isempty, revs)
@@ -74,20 +93,25 @@ Comonicon.@main function benchpkgtable(
     end
 
     modes = split(mode, ",")
-    for m in modes
-        println(
-            create_table(
-                combined_results;
-                add_ratio_col=ratio,
-                key=translate_mode(m),
-                time_unit=effective_time_unit,
-            ),
+    tables = map(modes) do m
+        create_table(
+            combined_results;
+            add_ratio_col=ratio,
+            key=translate_mode(m),
+            time_unit=effective_time_unit,
+            plain=plain,
+            significance_threshold=threshold,
+            collapse=collapse,
         )
     end
+    # Separate multiple mode sections with a horizontal rule.
+    println(join(tables, "\n---\n\n"))
 
     return nothing
 end
 
-translate_mode(s) = s == "time" ? "median" : s
+# Always return a `String`: `split(mode, ",")` yields `SubString`s, and
+# `create_table`/`_rich_table` require `key::String`.
+translate_mode(s) = s == "time" ? "median" : String(s)
 
 end # AirspeedVelocity.BenchPkgTable

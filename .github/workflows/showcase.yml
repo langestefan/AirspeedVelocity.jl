@@ -1,0 +1,59 @@
+name: Pretty-print showcase
+
+# Builds benchpkg/benchpkgtable from THIS branch, runs a real cross-version
+# benchmark, and posts the pretty-printed comment on the PR. Demonstration only.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  showcase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+
+      - uses: julia-actions/cache@v2
+
+      - name: Build benchpkg CLIs from this branch
+        run: |
+          export JULIA_NUM_THREADS=2
+          julia -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0; using Pkg; Pkg.develop(path=pwd()); Pkg.build("AirspeedVelocity")'
+          echo "$HOME/.julia/bin" >> "$GITHUB_PATH"
+
+      - name: Run benchmarks (benchpkg from this branch)
+        run: |
+          mkdir -p results
+          benchpkg SymbolicRegression \
+            --rev=v0.15.3,v0.16.2 \
+            --script=benchmark/showcase_script.jl \
+            --output-dir=results/
+
+      - name: Assemble comment (benchpkgtable from this branch)
+        run: |
+          {
+            echo "## 🏎️ Pretty-print showcase"
+            echo ""
+            echo "Real benchmark of **SymbolicRegression.jl** \`v0.15.3\` → \`v0.16.2\`, rendered by \`benchpkgtable\` built from this branch."
+            echo ""
+            benchpkgtable SymbolicRegression \
+              --rev=v0.15.3,v0.16.2 \
+              --input-dir=results/ \
+              --mode=time,memory \
+              --ratio
+          } > body.md
+
+      - name: Post comment on the PR
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: body.md
+          edit-mode: replace
